@@ -29,7 +29,7 @@ class McpToolsListTest {
         assertEquals(listOf(
             "get_state", "read_screen", "get_screenshot", "look_at_screen", "list_apps", "list_shortcuts", "list_parts",
             "open_app", "open_shortcut", "call_phone", "rigel_call", "rigel_call_status", "rigel_call_hangup", "rigel_incoming",
-            "share_call_record", "share_screenshot", "end_voice_chat", "search_photos", "show_photo", "share_photo", "open_panel", "tap", "point_at", "type_text",
+            "share_call_record", "share_screenshot", "end_voice_chat", "search_photos", "show_photo", "share_photo", "open_panel", "tap", "point_at", "wait_for_user", "type_text",
             "scroll", "back", "home", "press_key", "wait",
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
             "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "rigel_notify", "arm_stop",

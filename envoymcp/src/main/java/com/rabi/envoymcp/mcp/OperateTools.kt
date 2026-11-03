@@ -128,6 +128,10 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
 
     /** 指さしの見張り (画面が変わったら消す) */
     @Volatile private var pointJob: Job? = null
+    /** 今指しているもの (wait_for_user が、待つ間指したままにするのに使う) と、本人が押して画面が変わったか */
+    private class PointSpec(val id: Int, val pkg: String?, val target: Bounds, val label: String, val shown: Bounds)
+    @Volatile private var lastPoint: PointSpec? = null
+    @Volatile private var pointChanged = false
 
     /**
      * 指さす (やり方を教える): 指定した部品のまわりに、リゲルの光の枠を出す。押さない (押すのは本人)。
@@ -158,20 +162,69 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         if (b.w <= 0 || b.h <= 0) return failed("「$name」は画面に出ていません。scroll で画面に出してから頼み直してください。", summary(cur))
         val ms = (a.optDouble("seconds", POINT_DEFAULT_S) * 1000).toLong().coerceIn(POINT_MIN_MS, POINT_MAX_MS)
         stopPointing()
-        val id = g.overlay.point(b.l, b.t, b.r, b.b, ms)
-        pointJob = g.scope.launch(Dispatchers.IO) { watchPoint(id, cur.pkg, target, label, b) }
+        startPoint(cur.pkg, target, label, b, ms)
         val where = whereOnScreen(b, sw, sh)
         return ok("「$name」を、水色に光る枠と小さな矢印で ${ms / 1000} 秒指しました (押してはいません)。場所は${where}です。" +
             "利用者に、場所を言葉でも伝えて、自分で押してもらってください (例: 「${where}の、水色に光っている『$name』を押してください」)。" +
-            "枠は、利用者が押して画面が変わるか、時間が来るか、ほかの操作の道具を使うと消えます。押せたかは、少し待ってから read_screen で確かめられます。",
+            "枠は、利用者が押して画面が変わるか、時間が来るか、ほかの操作の道具を使うと消えます。続けて wait_for_user を呼ぶと、利用者が押すのを待ち、押したあとの画面を返します。",
             JSONObject().put("label", name).put("position", where).put("seconds", ms / 1000).put("bounds", b.toString()))
+    }
+
+    /** 指さしを出して、見張りを始める */
+    private fun startPoint(pkg: String?, target: Bounds, label: String, shown: Bounds, ms: Long) {
+        val id = g.overlay.point(shown.l, shown.t, shown.r, shown.b, ms)
+        lastPoint = PointSpec(id, pkg, target, label, shown)
+        pointChanged = false
+        pointJob = g.scope.launch(Dispatchers.IO) { watchPoint(id, pkg, target, label, shown) }
     }
 
     /** 指さしを消す (ほかの道具が動き始めたとき) */
     fun stopPointing() {
         pointJob?.cancel(); pointJob = null
+        lastPoint = null
         g.overlay.clearPoint()
     }
+
+    /**
+     * 本人が押すのを待つ (一緒にやる: point_at で指したあと)。画面が変わったら、変わったあとの画面を返す (続けて次を指せる)。
+     * 指している間は、待つ長さまで指したままにして、指さしの見張りが「画面が変わった」と見るのを待つ。
+     * 指していなければ、ユーザー補助の部品の木 (無ければ前面の画面の名前) が変わるのを待つ
+     */
+    suspend fun waitForUser(a: JSONObject): ToolResult {
+        val ms = (a.optDouble("seconds", WAIT_USER_DEFAULT_S) * 1000).toLong().coerceIn(WAIT_USER_MIN_MS, WAIT_USER_MAX_MS)
+        val until = System.currentTimeMillis() + ms
+        val p = lastPoint
+        val changed = if (p != null && g.overlay.pointing(p.id)) {
+            // 待つ間、枠を消さない (指さしの長さを、待つ長さに延ばす)
+            pointJob?.cancel(); g.overlay.clearPoint(p.id)
+            startPoint(p.pkg, p.target, p.label, p.shown, ms)
+            val id = lastPoint?.id
+            while (System.currentTimeMillis() < until && !pointChanged && id != null && g.overlay.pointing(id)) delay(WAIT_USER_POLL_MS)
+            pointChanged
+        } else {
+            val base = signature() ?: return failed("画面を読み取れません。")
+            var c = false
+            while (System.currentTimeMillis() < until) {
+                delay(WAIT_USER_POLL_MS)
+                val s = signature() ?: continue
+                if (s != base) { c = true; break }
+            }
+            c
+        }
+        if (changed) delay(WAIT_USER_SETTLE_MS)   // 押したあとの画面が出そろうのを少し待つ
+        val o = g.device.observe()
+        return if (changed) ok("画面が変わりました (利用者が押したようです)。変わったあとの画面の部品の一覧を返します。" +
+            "やり方を教えている途中なら、次に押す場所を point_at で指して、場所を言葉でも伝え、また wait_for_user で待ってください。" +
+            "思っていたのと違う画面なら、戻り方を指してください。最後まで終わったら、できたことを伝えてください。", summary(o))
+        else ok("${ms / 1000} 秒待ちましたが、画面は変わっていません。利用者に、場所をもう一度伝えるか、分からないところがないか聞いてください。", summary(o))
+    }
+
+    /** 画面の見分け: ユーザー補助があれば前のアプリと部品 (名前・位置・選ばれ方)、無ければ前面の画面の名前 */
+    private suspend fun signature(): String? =
+        if (A11yService.instance != null) g.a11yDevice.observe(false).takeIf { it.ok }?.let { o ->
+            o.pkg + "|" + o.nodes.filter { it.clickable || it.label.isNotBlank() }.joinToString("|") { "${it.label}@${it.bounds}:${it.checked}" }.hashCode()
+        }
+        else g.foregroundActivity()?.let { "${it.first}/${it.second}" }
 
     /**
      * 指さしを見張り、画面が変わったら消す: 前のアプリ (pkg) が替わった・指した部品 (無ければその場所の部品) が動いた・消えた・
@@ -191,11 +244,11 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
                         if (base == null) {
                             // 見比べるもと: 指した画面と同じアプリの木 (覆いを外した直後などは、別の窓が読めることがある。続けば画面が変わった)
                             if (o.pkg == want) { base = o; anchor = o.nodes.firstOrNull { it.bounds == target && it.label == label } ?: o.nodeAt(shown.cx, shown.cy) }
-                            else if (++misses >= POINT_BASE_TRIES) break
+                            else if (++misses >= POINT_BASE_TRIES) { pointChanged = true; break }
                         } else {
-                            if (o.pkg != want) break
+                            if (o.pkg != want) { pointChanged = true; break }
                             val a = anchor
-                            if (a != null && o.nodes.none { it.bounds == a.bounds && it.label == a.label && it.cls == a.cls && it.checked == a.checked && it.focused == a.focused }) break
+                            if (a != null && o.nodes.none { it.bounds == a.bounds && it.label == a.label && it.cls == a.cls && it.checked == a.checked && it.focused == a.focused }) { pointChanged = true; break }
                         }
                     }
                     delay(POINT_POLL_MS)
@@ -206,7 +259,7 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
                     delay(POINT_ADB_POLL_MS)
                     if (base == null) continue
                     val f = g.foregroundActivity() ?: continue
-                    if (f != base) break
+                    if (f != base) { pointChanged = true; break }
                 }
             }
         } finally {
@@ -371,6 +424,12 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         private const val MAX_CONTENT = 600
         /** 指さしの長さ (秒。既定) と、その下限・上限 */
         private const val POINT_DEFAULT_S = 10.0
+        /** 本人が押すのを待つ長さ (既定・最短・最長)、見る間隔、押したあと画面が出そろうまで */
+        private const val WAIT_USER_DEFAULT_S = 20.0
+        private const val WAIT_USER_MIN_MS = 5_000L
+        private const val WAIT_USER_MAX_MS = 60_000L
+        private const val WAIT_USER_POLL_MS = 400L
+        private const val WAIT_USER_SETTLE_MS = 600L
         private const val POINT_MIN_MS = 3_000L
         private const val POINT_MAX_MS = 30_000L
         /** 指さしの間、画面が変わったかを見る間隔 (ユーザー補助で部品の木を読む・ADB で前面の画面の名前を読む) */

@@ -223,12 +223,21 @@ class McpTools(private val g: McpGraph) : ToolHost {
                 "部品のまわりに水色に光る枠と小さな矢印を seconds 秒 (省略すると 10 秒、30 秒まで) 出します。枠は重ねて見せるだけで、利用者はそのまま下のボタンを押せます。" +
                 "呼んだら、返した場所 (position) を使って、場所を言葉でも伝えてください (例: 「画面の右下の、水色に光っている『送信』を押してください」)。" +
                 "ENVOY MCP は押しません。枠は、利用者が押して画面が変わる・時間が来る・ほかの操作の道具を使うと消えます " +
-                "(read_screen・look_at_screen・get_screenshot・get_state・wait では消えないので、押せたかを確かめられます)。" +
+                "(read_screen・look_at_screen・get_screenshot・get_state・wait・wait_for_user では消えないので、押せたかを確かめられます)。" +
+                "指したあとは wait_for_user で、利用者が押すのを待てます (押したら次の画面が返るので、続けて次を指せます)。" +
                 "ChatGPT の音声モードの画面そのものは指せません (先に open_app などで、やり方を教えるアプリを開きます)。",
             act = false, caption = "", readOnly = false, quiet = true,
             params = props("element_id" to int("部品の一覧の番号"), "text" to str("指す部品の文字か説明 (element_id が無いとき)"),
                 "visual_id" to str("look_at_screen が返した番号 (v1 など)"),
                 "seconds" to num("指している秒数 (3〜30。省略すると 10)"))) { operateTools.pointAt(it) },
+        // 一緒にやる: 指したあと、本人が押すのを待つ (押したら次の画面を返す)。見ているだけなので、操作中の顔にしない
+        Tool("wait_for_user", "本人が押すのを待つ",
+            "やり方を教えている途中 (point_at で指したあと) に、利用者が自分で押すのを待ちます (一緒にやる)。" +
+                "画面が変わったら (押したら) すぐ戻り、変わったあとの画面の部品の一覧を返すので、続けて次に押す場所を point_at で指し、また wait_for_user で待ちます。" +
+                "これを最後までくり返すと、利用者は「押したよ」と言わなくても、押していくだけでひととおりできます。違う画面になったら、戻り方を point_at で指してください。" +
+                "seconds 秒 (省略すると 20 秒、60 秒まで) たっても変わらなければ、そのまま戻ります。待つ間、指した枠は出したままです。ENVOY MCP は押しません。",
+            act = false, caption = "", readOnly = true, quiet = true, timeoutMs = WAIT_USER_TIMEOUT_MS,
+            params = props("seconds" to num("待つ長さの上限 (秒。5〜60。省略すると 20)"))) { operateTools.waitForUser(it) },
         Tool("type_text", "文字を入力する",
             "入力欄に文字を入れます。element_id (read_screen の番号) を指定すると、その欄を押してから入れます (中身があれば消してから)。" +
                 "改行は入れません (送信になることがあるため)。パスワード欄には入れません。入れたあと、画面で確かめた結果を返します。" +
@@ -490,8 +499,10 @@ class McpTools(private val g: McpGraph) : ToolHost {
         const val ARM_TIMEOUT_MS = 30_000L
         /** 腕を動かす道具の上限 (大きく動かすと、速さの上限で 30 秒ほどかかる) */
         const val ARM_MOVE_TIMEOUT_MS = 45_000L
+        /** 本人が押すのを待つ道具の時間の区切り (待つ長さの上限 60 秒より少し長く) */
+        private const val WAIT_USER_TIMEOUT_MS = 70_000L
         private const val ADB_CONNECT_MS = 8_000L
         /** 動いても指さしを消さない道具 (画面を読む・待つ・表情を見せるだけ) */
-        private val KEEP_POINT = setOf("get_state", "read_screen", "get_screenshot", "look_at_screen", "wait", "rigel_expression")
+        private val KEEP_POINT = setOf("get_state", "read_screen", "get_screenshot", "look_at_screen", "wait", "wait_for_user", "rigel_expression")
     }
 }

@@ -5,7 +5,7 @@ object ToolGroups {
     val groups: List<Pair<String, List<String>>> = listOf(
         "様子・画面" to listOf("get_state", "read_screen", "get_screenshot", "look_at_screen", "share_screenshot"),
         "アプリ" to listOf("list_apps", "list_shortcuts", "open_app", "open_shortcut", "open_panel"),
-        "操作" to listOf("tap", "point_at", "type_text", "scroll", "back", "home", "press_key", "wait"),
+        "操作" to listOf("tap", "point_at", "wait_for_user", "type_text", "scroll", "back", "home", "press_key", "wait"),
         "部品 (覚えた手順)" to listOf("list_parts", "run_part", "save_part", "delete_part"),
         "写真" to listOf("search_photos", "show_photo", "share_photo"),
         "電話" to listOf("call_phone", "rigel_call", "rigel_call_status", "rigel_call_hangup", "rigel_incoming", "share_call_record"),
