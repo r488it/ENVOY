@@ -27,7 +27,7 @@ internal fun ServerCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (Strin
     val server by g.server.state.collectAsState()
     val enabled = remember(tick) { g.settings.serverEnabled }
     Card(CardTitle.SERVER, server.label, server is McpServer.State.Running, icon = Icons.Rounded.Dns) {
-        Note("オンにしている間だけ、このスマホの中 (127.0.0.1) で MCP サーバーが動き、通知に出し続けます。ChatGPT からは、tunnel-client (OpenAI の Secure MCP Tunnel) を通して届きます。今の道具は「スマホの状態」(get_state、読むだけ) だけです。")
+        Note("オンにしている間だけ、このスマホの中 (127.0.0.1) で MCP サーバーが動き、通知に出し続けます。ChatGPT からは、tunnel-client (OpenAI の Secure MCP Tunnel) を通して届きます。呼べる道具は、下の「MCP の道具」で見られます。")
         Toggle("MCP サーバーを動かす", enabled) { a.setServer(it) }
         Line("状態", server.label, server is McpServer.State.Running)
         if (g.stoppedByUser()) {

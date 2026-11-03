@@ -13,6 +13,16 @@ class McpToolsListTest {
         return cls.getMethod("allocateInstance", Class::class.java).invoke(u, McpGraph::class.java) as McpGraph
     }
 
+    /** どの道具も、設定の画面の「MCP の道具」のまとまりに入っている (まとまりに、無い道具を書いていない) */
+    @Test fun everyToolHasAGroup() {
+        val list = McpTools(graph()).list()
+        val names = (0 until list.length()).map { list.getJSONObject(it).getString("name") }.toSet()
+        val grouped = ToolGroups.groups.flatMap { it.second }
+        assertEquals(emptySet<String>(), names - grouped.toSet())
+        assertEquals(emptySet<String>(), grouped.toSet() - names)
+        assertEquals(grouped.size, grouped.toSet().size)
+    }
+
     @Test fun namesAndOrder() {
         val list = McpTools(graph()).list()
         val names = (0 until list.length()).map { list.getJSONObject(it).getString("name") }
