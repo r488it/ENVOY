@@ -68,6 +68,37 @@ class AgentPolicyTest {
         assertFalse(AgentPolicy.allows(limited.copy(enabled = false), "get_state", true, now, unlimited = true))
     }
 
+    /** 道具を 1 つずつ止める・足す (まとまりと除外) */
+    @Test fun singleToolsCanBeTurnedOffAndOn() {
+        // 電話のまとまりは許すが、リゲルの代理の電話だけ止める
+        val a = AgentPolicy.withTool(Agent.MAIN, "rigel_call", false)
+        assertFalse(AgentPolicy.allows(a, "rigel_call", false, now))
+        assertTrue(AgentPolicy.allows(a, "call_phone", false, now))
+        assertTrue(AgentPolicy.allows(a, "tap", false, now))
+        assertEquals(AgentPolicy.GroupState.PART, AgentPolicy.groupState(a, "電話"))
+        assertEquals("1 個を止めている", AgentPolicy.summary(a))
+        // あとで増えた道具 (どのまとまりにも入らない) は、すべてのまとまりを許していれば使える
+        assertTrue(AgentPolicy.allows(a, "some_new_tool", false, now))
+        // まとまりをオンにし直すと、止めた道具も戻る
+        val back = AgentPolicy.withGroup(a, "電話", true)
+        assertTrue(AgentPolicy.allows(back, "rigel_call", false, now))
+        assertEquals(AgentPolicy.GroupState.ON, AgentPolicy.groupState(back, "電話"))
+        // 保存して読み直しても同じ
+        assertEquals(a.denied, Agent.fromJson(a.toJson())!!.denied)
+    }
+
+    @Test fun turningOnOneToolOfAnOffGroupAllowsOnlyThatTool() {
+        val off = AgentPolicy.withGroup(agent(), "電話", false)
+        val one = AgentPolicy.withTool(off, "call_phone", true)
+        assertTrue(AgentPolicy.allows(one, "call_phone", false, now))
+        assertFalse(AgentPolicy.allows(one, "rigel_call", false, now))
+        assertEquals(AgentPolicy.GroupState.PART, AgentPolicy.groupState(one, "電話"))
+        // その 1 つを止めると、まとまりごとオフに戻る
+        val none = AgentPolicy.withTool(one, "call_phone", false)
+        assertEquals(AgentPolicy.GroupState.OFF, AgentPolicy.groupState(none, "電話"))
+        assertTrue(none.denied.isEmpty())
+    }
+
     @Test fun refusalIsAToolError() {
         val r = AgentPolicy.refusal(agent())
         assertTrue(r.isError)

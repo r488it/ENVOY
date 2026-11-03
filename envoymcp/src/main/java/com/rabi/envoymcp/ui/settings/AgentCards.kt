@@ -111,15 +111,29 @@ private fun AgentEditor(g: McpGraph, a: SettingsActivity, ag: Agent, say: (Strin
         Toggle("使えるようにする (オフにすると、このエージェントからの接続を断ります)", ag.enabled) { save(ag.copy(enabled = it)) }
         Sub("かんたん設定")
         Btns {
-            Btn("すべて許可") { save(ag.copy(groups = null, readOnly = false, expiresAt = 0L)); say("${ag.name}: すべての道具を、期限なしで使えるようにしました") }
-            Btn("読むだけ") { save(ag.copy(groups = null, readOnly = true)); say("${ag.name}: 読むだけにしました") }
+            Btn("すべて許可") { save(ag.copy(groups = null, denied = emptySet(), readOnly = false, expiresAt = 0L)); say("${ag.name}: すべての道具を、期限なしで使えるようにしました") }
+            Btn("読むだけ") { save(ag.copy(groups = null, denied = emptySet(), readOnly = true)); say("${ag.name}: 読むだけにしました") }
         }
         Toggle("読むだけにする (画面・状態を見るだけ。押す・開く・電話などはしない)", ag.readOnly) { save(ag.copy(readOnly = it)) }
-        Sub("使える道具のまとまり")
+        Sub("使える道具")
+        // 道具の日本語の名前と、読むだけの道具か (MCP サーバーが返す道具の一覧から)
+        val info = remember { toolInfo(g) }
+        var openGroups by remember(ag.id) { mutableStateOf(setOf<String>()) }
         ToolGroups.groups.forEach { (group, tools) ->
-            Toggle("$group (${tools.size})", ag.groups?.contains(group) ?: true) { on -> save(ag.copy(groups = withGroup(ag.groups, group, on))) }
+            val st = AgentPolicy.groupState(ag, group)
+            val count = if (st == AgentPolicy.GroupState.PART) "${tools.count { AgentPolicy.toolOn(ag, it) }} / ${tools.size}" else "${tools.size}"
+            Toggle("$group ($count)", st != AgentPolicy.GroupState.OFF) { on -> save(AgentPolicy.withGroup(ag, group, on)) }
+            val open = group in openGroups
+            Text((if (open) "▾ " else "▸ ") + "道具を 1 つずつ選ぶ", color = Palette.Accent, fontSize = 13.sp,
+                modifier = Modifier.clickable { openGroups = if (open) openGroups - group else openGroups + group }.padding(start = 4.dp, bottom = 2.dp))
+            if (open) Column(Modifier.padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                tools.forEach { t ->
+                    val (title, ro) = info[t] ?: (t to false)
+                    Toggle("$title ($t)" + if (ag.readOnly && !ro) " ・読むだけの間は使えない" else "", AgentPolicy.toolOn(ag, t)) { on -> save(AgentPolicy.withTool(ag, t, on)) }
+                }
+            }
         }
-        Note("どのまとまりにも入らない道具 (その他) は、すべてのまとまりを許したときだけ使えます。道具の中身は「つながり」の「MCP の道具」で見られます。")
+        Note("まとまりの中を開くと、道具を 1 つずつ止められます。オフのまとまりの道具を 1 つオンにすると、その道具だけが使えます。どのまとまりにも入らない道具 (その他) は、すべてのまとまりを許したときだけ使えます。道具の中身は「つながり」の「MCP の道具」で見られます。")
         Sub("期限")
         Line("期限", if (ag.expiresAt > 0) "${WHEN_FMT.format(Date(ag.expiresAt))} まで" else "なし")
         Btns {
@@ -144,12 +158,13 @@ private fun AgentEditor(g: McpGraph, a: SettingsActivity, ag: Agent, say: (Strin
     }
 }
 
-/** まとまりを足す・外す (全部そろったら null = すべて。あとで増えたまとまりも使える) */
-private fun withGroup(groups: Set<String>?, group: String, on: Boolean): Set<String>? {
-    val all = ToolGroups.groups.map { it.first }
-    val cur = groups ?: all.toSet()
-    val next = if (on) cur + group else cur - group
-    return if (all.all { it in next }) null else next
+/** 道具の名前 → (日本語の名前, 読むだけの道具か) */
+private fun toolInfo(g: McpGraph): Map<String, Pair<String, Boolean>> {
+    val list = g.tools.list()
+    return (0 until list.length()).associate { i ->
+        val t = list.getJSONObject(i)
+        t.getString("name") to (t.optString("title") to (t.optJSONObject("annotations")?.optBoolean("readOnlyHint") == true))
+    }
 }
 
 /** 今日の終わり (この時刻から使えない) */

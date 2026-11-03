@@ -25,6 +25,8 @@ data class Agent(
     val readOnly: Boolean = false,
     /** 使ってよい道具のまとまり (ToolGroups の名前)。null はすべて (どのまとまりにも入らない「その他」の道具も) */
     val groups: Set<String>? = null,
+    /** 許したまとまりの中で、1 つずつ止めた道具の名前 */
+    val denied: Set<String> = emptySet(),
     /** この時刻から使えない。0 は期限なし */
     val expiresAt: Long = 0L,
     val createdAt: Long = 0L,
@@ -40,6 +42,7 @@ data class Agent(
         .apply {
             if (!main) put("token", token)
             if (groups != null) put("groups", JSONArray(groups.toList()))
+            if (denied.isNotEmpty()) put("denied", JSONArray(denied.toList()))
         }
 
     companion object {
@@ -53,6 +56,7 @@ data class Agent(
                 id = o.getString("id"), name = o.optString("name").ifBlank { "エージェント" }, token = o.optString("token"),
                 enabled = o.optBoolean("enabled", true), readOnly = o.optBoolean("read_only", false),
                 groups = o.optJSONArray("groups")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() },
+                denied = o.optJSONArray("denied")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet(),
                 expiresAt = o.optLong("expires_at"), createdAt = o.optLong("created_at"), lastUsedAt = o.optLong("last_used_at"),
             )
         }.getOrNull()
@@ -76,12 +80,13 @@ object AgentPolicy {
     /**
      * この道具を使ってよいか (tool は道具の名前、readOnly はその道具が読むだけか)。
      * 止めている・期限切れ → だめ。開発モードなら、それ以外は全部よい。読むだけのエージェントは読むだけの道具だけ。
-     * まとまりを絞っていれば、そのまとまりの道具だけ (「その他」の道具は、すべてのまとまりを許したときだけ)
+     * まとまりを絞っていれば、そのまとまりの道具だけ (「その他」の道具は、すべてのまとまりを許したときだけ)。1 つずつ止めた道具はだめ
      */
     fun allows(a: Agent, tool: String, readOnly: Boolean, now: Long, unlimited: Boolean = false): Boolean {
         if (status(a, now, unlimited) != Status.OK) return false
         if (unlimited) return true
         if (a.readOnly && !readOnly) return false
+        if (tool in a.denied) return false
         if (allGroups(a)) return true
         val group = ToolGroups.of(tool)
         return group != ToolGroups.OTHER && a.groups?.contains(group) == true
@@ -103,7 +108,50 @@ object AgentPolicy {
                 else -> "${gs.size} つのまとまりだけ"
             }
         }
+        if (a.denied.isNotEmpty()) parts += "${a.denied.size} 個を止めている"
         return parts.joinToString("・").ifEmpty { "すべて" }
+    }
+
+    /** まとまりの様子: すべてオン・一部だけオン・オフ */
+    enum class GroupState { ON, PART, OFF }
+
+    fun groupState(a: Agent, group: String): GroupState {
+        if (a.groups?.contains(group) == false) return GroupState.OFF
+        val tools = ToolGroups.groups.firstOrNull { it.first == group }?.second.orEmpty()
+        return if (tools.any { it in a.denied }) GroupState.PART else GroupState.ON
+    }
+
+    /** 道具 1 つが、まとまりと除外の上でオンか (読むだけかどうかは見ない) */
+    fun toolOn(a: Agent, tool: String): Boolean {
+        if (tool in a.denied) return false
+        val group = ToolGroups.of(tool)
+        return if (group == ToolGroups.OTHER) allGroups(a) else a.groups?.contains(group) ?: true
+    }
+
+    /** まとまりを足す・外す (中の道具の除外は消す。全部そろったら null = すべて。あとで増えたまとまりも使える) */
+    fun withGroup(a: Agent, group: String, on: Boolean): Agent {
+        val all = ToolGroups.groups.map { it.first }
+        val cur = a.groups ?: all.toSet()
+        val next = if (on) cur + group else cur - group
+        val inGroup = ToolGroups.groups.firstOrNull { it.first == group }?.second.orEmpty().toSet()
+        return a.copy(groups = if (all.all { it in next }) null else next, denied = a.denied - inGroup)
+    }
+
+    /**
+     * 道具を 1 つずつオン・オフする。オフのまとまりの道具をオンにしたら、まとまりをオンにして、ほかの道具は止める。
+     * まとまりの道具が全部オフになったら、まとまりごとオフにする
+     */
+    fun withTool(a: Agent, tool: String, on: Boolean): Agent {
+        val group = ToolGroups.of(tool)
+        if (group == ToolGroups.OTHER) return a.copy(denied = if (on) a.denied - tool else a.denied + tool)
+        val inGroup = ToolGroups.groups.first { it.first == group }.second
+        val groupOn = a.groups?.contains(group) ?: true
+        return when {
+            on && groupOn -> a.copy(denied = a.denied - tool)
+            on -> withGroup(a, group, true).let { it.copy(denied = it.denied + (inGroup - tool)) }
+            !groupOn -> a
+            else -> (a.denied + tool).let { d -> if (inGroup.all { it in d }) withGroup(a, group, false) else a.copy(denied = d) }
+        }
     }
 
     /** まとまりの短い呼び名 (一行のまとめに使う) */
