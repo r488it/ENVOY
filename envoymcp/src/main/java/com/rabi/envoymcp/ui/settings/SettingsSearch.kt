@@ -4,6 +4,7 @@ import java.text.Normalizer
 
 /**
  * 設定の画面の検索 (項目が多いので、探して絞り込む)。
+ * - カードは区分 (一覧の 1 行。つながり・電話 など) に入っている。合うカードがある区分と、名前が合う区分を出す
  * - 見出し (カード) に言葉が入っていれば、そのカードを丸ごと出す
  * - 入っていなければ、項目 (スイッチ・ボタン・行・説明) のうち、言葉が入っているものだけを出す。合う項目が無いカードは出さない
  * - カードの中の項目の文字は、出したときに覚えておく (検索の前は全部出しているので、全部覚えている)
@@ -17,6 +18,9 @@ class SettingsSearch {
     /** カードの見出し → 中の項目の文字 (正規化したもの) */
     private val texts = HashMap<String, MutableSet<String>>()
 
+    /** カードの見出し → 入っている区分の名前 */
+    private val sections = HashMap<String, String>()
+
     fun setQuery(q: String) { query = norm(q) }
 
     val active get() = query.isNotEmpty()
@@ -27,6 +31,9 @@ class SettingsSearch {
         texts.getOrPut(card) { HashSet() }.add(norm(text))
     }
 
+    /** このカードは、この区分に入っている (出したときに呼ぶ) */
+    fun place(card: String, section: String) { if (section.isNotBlank()) sections[card] = section }
+
     /** 見出しに言葉が入っている (中は全部出す) */
     fun titleHit(card: String) = !active || norm(card).contains(query)
 
@@ -36,8 +43,11 @@ class SettingsSearch {
     /** 見出しが合っていないカードの中で、この項目を出すか */
     fun itemHit(vararg text: String) = !active || text.any { norm(it).contains(query) }
 
-    /** 合うカードが 1 つでもあるか (覚えているカードの中で) */
-    fun anyVisible() = !active || texts.keys.any { cardVisible(it) }
+    /** この区分を出すか (区分の名前が合うか、中に出すカードがある) */
+    fun sectionVisible(section: String) = titleHit(section) || sections.any { (card, s) -> s == section && cardVisible(card) }
+
+    /** 合うカード・区分が 1 つでもあるか (覚えているものの中で) */
+    fun anyVisible() = !active || texts.keys.any { cardVisible(it) } || sections.values.any { titleHit(it) }
 
     companion object {
         fun norm(s: String): String {

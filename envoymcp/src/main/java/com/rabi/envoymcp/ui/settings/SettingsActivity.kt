@@ -124,7 +124,7 @@ class SettingsActivity : ComponentActivity() {
 
     fun clearKey() { g.tunnelKey.clear(); reapply() }
 
-    // ---------------------------------------------------------------- 操作と表示
+    // ---------------------------------------------------------------- スマホの操作・承認・リゲル
 
     fun openOverlayPermission() = runCatching {
         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

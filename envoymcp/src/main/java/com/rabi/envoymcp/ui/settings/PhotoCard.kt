@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,7 +55,7 @@ internal fun PhotoCard(g: McpGraph, a: SettingsActivity, tick: Int) {
         st.indexing -> "索引 ${st.indexed}/${st.total}"
         else -> "索引 ${st.indexed} 枚"
     }
-    Card("写真を探す (EmbeddingGemma 2)", status, if (!perm || !st.modelReady) false else true) {
+    Card("写真を探す (EmbeddingGemma 2)", status, if (!perm || !st.modelReady) false else true, icon = Icons.Rounded.ImageSearch) {
         Note("ChatGPT に「〇〇の写真を探して、X にポストして」「LINE で〇〇さんに送って」と頼めます。写真は、スマホの中の AI (EmbeddingGemma 2。${ps.spec.label}) が言葉との近さで探し、スマホの外には出しません。ChatGPT に渡すのは、写真の番号・撮った日時・近さだけです。投稿・送信のボタンを押すときは、いつもどおりスマホでの承認が要ります。")
         Line("写真", if (perm) "許可" else "未許可", perm)
         if (!perm) Btn("写真へのアクセスを許可する (「すべて許可」を選ぶ)", true) { a.requestPhotos() }

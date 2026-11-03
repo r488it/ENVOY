@@ -5,13 +5,19 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 設定の画面の検索: 見出しが合えばカードを丸ごと、合わなければ合う項目だけ。表記のゆれは区別しない */
+/** 設定の画面の検索: 見出しが合えばカードを丸ごと、合わなければ合う項目だけ。合うカードのある区分を出す。表記のゆれは区別しない */
 class SettingsSearchTest {
     private fun search() = SettingsSearch().apply {
-        add("AgentARM (スマホを載せる腕)", "撮りながら追う")
-        add("AgentARM (スマホを載せる腕)", "音楽が流れたら踊る")
-        add("操作と表示", "音声モードの間は画面全体をリゲルにする")
+        add("AgentARM (スマホを載せる腕)", "AgentARM を使う")
+        add("音楽に合わせて踊る", "音楽が流れたら踊る")
+        add("試す", "撮りながら追う")
+        add("音声モードの画面", "音声モードの間は画面全体をリゲルにする")
         add("トンネル (スマホの中の tunnel-client)", "tunnel_id を保存")
+        place("AgentARM (スマホを載せる腕)", "AgentARM")
+        place("音楽に合わせて踊る", "AgentARM")
+        place("試す", "AgentARM")
+        place("音声モードの画面", "リゲル")
+        place("トンネル (スマホの中の tunnel-client)", "つながり")
     }
 
     @Test fun normalizesKanaWidthCaseAndSpaces() {
@@ -26,19 +32,36 @@ class SettingsSearchTest {
         s.setQuery("agentarm")
         assertTrue(s.cardVisible("AgentARM (スマホを載せる腕)"))
         assertTrue(s.titleHit("AgentARM (スマホを載せる腕)"))
-        assertFalse(s.cardVisible("操作と表示"))
+        assertFalse(s.cardVisible("音声モードの画面"))
     }
 
     @Test fun itemHitShowsOnlyMatchingItems() {
         val s = search()
         s.setQuery("踊る")
-        assertTrue(s.cardVisible("AgentARM (スマホを載せる腕)"))
-        assertFalse(s.titleHit("AgentARM (スマホを載せる腕)"))
+        assertTrue(s.cardVisible("音楽に合わせて踊る"))
         assertTrue(s.itemHit("音楽が流れたら踊る"))
         assertFalse(s.itemHit("撮りながら追う"))
+        s.setQuery("追う")
+        assertTrue(s.cardVisible("試す"))
+        assertFalse(s.titleHit("試す"))
         s.setQuery("リゲル")
-        assertTrue(s.cardVisible("操作と表示"))
+        assertTrue(s.cardVisible("音声モードの画面"))
         assertFalse(s.cardVisible("AgentARM (スマホを載せる腕)"))
+    }
+
+    @Test fun sectionShowsWhenACardInsideMatches() {
+        val s = search()
+        s.setQuery("撮りながら")
+        assertTrue(s.sectionVisible("AgentARM"))
+        assertFalse(s.sectionVisible("リゲル"))
+        assertFalse(s.sectionVisible("つながり"))
+        // 区分の名前が合えば、中のカードが合わなくても出す
+        s.setQuery("つながり")
+        assertTrue(s.sectionVisible("つながり"))
+        assertFalse(s.cardVisible("トンネル (スマホの中の tunnel-client)"))
+        assertTrue(s.anyVisible())
+        s.setQuery("")
+        assertTrue(s.sectionVisible("どこか"))
     }
 
     @Test fun emptyQueryShowsAllAndNothingMatchesIsKnown() {
