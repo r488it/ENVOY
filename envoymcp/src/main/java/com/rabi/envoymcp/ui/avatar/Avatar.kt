@@ -106,8 +106,10 @@ object AvatarGeometry {
     /** big: モニター (PC モード) の全画面のリゲル。上限なしで、画面の高さの 74% (幅の 80% まで) の直径にする */
     fun center(w: Float, h: Float, fullScreen: Boolean, big: Boolean = false) =
         if (big) Offset(w * 0.5f, h * 0.47f) else if (fullScreen) Offset(w * 0.5f, h * 0.45f) else Offset(w / 2f, h / 2f)
-    fun radius(w: Float, h: Float, fullScreen: Boolean, maxDiameterPx: Float, big: Boolean = false) =
-        if (big) minOf(w * 0.80f, h * 0.74f) / 2f else if (fullScreen) minOf(w * 0.58f, h * 0.34f, maxDiameterPx) / 2f else minOf(w, h) * 0.30f
+    /** compact: 他のアプリの上の小さなリゲル。窓の 74% の直径にする */
+    fun radius(w: Float, h: Float, fullScreen: Boolean, maxDiameterPx: Float, big: Boolean = false, compact: Boolean = false) =
+        if (big) minOf(w * 0.80f, h * 0.74f) / 2f else if (fullScreen) minOf(w * 0.58f, h * 0.34f, maxDiameterPx) / 2f
+        else minOf(w, h) * (if (compact) 0.37f else 0.30f)
 }
 
 /** 状態ごとの目標値。すべて球の半径 r に対する割合 (角度は度) */
@@ -161,6 +163,8 @@ fun Avatar(
     allow3d: Boolean = false,
     /** モニターの全画面のリゲルのように、上限なしで大きく描く */
     big: Boolean = false,
+    /** 小さな窓 (他のアプリの上の小さなリゲル) に、窓いっぱい近くまで大きく描く。まわりの光は窓の端までに消す */
+    compact: Boolean = false,
     /** 音楽に合わせてノる元 (音楽の画面のときだけ)。体のずれ・傾きを書き返す */
     groove: Groove? = null,
 ) {
@@ -496,7 +500,7 @@ fun Avatar(
     BoxWithConstraints(modifier) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        val r = AvatarGeometry.radius(w, h, fullScreen, maxDiameter, big)
+        val r = AvatarGeometry.radius(w, h, fullScreen, maxDiameter, big, compact)
         val c0 = AvatarGeometry.center(w, h, fullScreen, big)
         if (use3d) {
             // 球のまわり (上下に半径の 2.1 倍) だけを描画面にする。外側の光もこの中に収まる
@@ -532,7 +536,7 @@ fun Avatar(
                     tintAmt = maxOf(exTint.value, gz.tint), tint = if (exTint.value >= gz.tint) tint else TINT_JOY)
             }
             // 周りの光 (ぼけた広がり)
-            Canvas(Modifier.fillMaxSize()) { drawOrbHalo(frame(c0)) }
+            Canvas(Modifier.fillMaxSize()) { drawOrbHalo(frame(c0), fit = compact) }
             // くっきりした層: ガラスの本体・厚み・映り込み・目
             Canvas(Modifier.fillMaxSize()) { val f = frame(c0); orbTransform(f) { drawOrbBody(f, style) } }
             // にじむ光: 縁・目・反射を明るく描いて GPU でぼかし、本体の上に光として足す (球のまわりだけの大きさにして負荷を抑える)
@@ -830,9 +834,12 @@ private fun rimSweep(c: Offset, k: Float, warm: Float = 0f) = Brush.sweepGradien
     center = c,
 )
 
-/** 周りの淡い青い光 (輪郭のぼけた広がり) と、遠くの淡い輪 */
-private fun DrawScope.drawOrbHalo(f: OrbFrame) {
+/** 周りの淡い青い光 (輪郭のぼけた広がり) と、遠くの淡い輪。fit: 描く面の端までに消えるようにする (小さな窓で、光が四角く切れないように) */
+private fun DrawScope.drawOrbHalo(f: OrbFrame, fit: Boolean = false) {
     val c = f.c; val r = f.r * f.scl
+    val edge = if (fit) minOf(c.x, c.y, size.width - c.x, size.height - c.y).coerceAtLeast(1f) else Float.MAX_VALUE
+    val far = minOf(r * 2.4f, edge)
+    val ring = minOf(r * 1.32f, edge)
     val k = (0.6f + f.glow * 0.4f + f.flash * 0.3f + f.level * 0.2f).coerceIn(0f, 1.3f) * (1f + f.tint.lift * f.tintAmt)
     // 表情の色: まわりの光をその色に寄せる (うれしい・笑うは金色)
     val h1 = lerp(Color(0xFF2A6FB8), f.tint.halo, 0.55f * f.tintAmt)
@@ -840,12 +847,12 @@ private fun DrawScope.drawOrbHalo(f: OrbFrame) {
     drawCircle(Brush.radialGradient(
         0.0f to h1.copy(alpha = (0.22f * k).coerceIn(0f, 1f)), 0.42f to h1.copy(alpha = (0.16f * k).coerceIn(0f, 1f)),
         0.62f to h2.copy(alpha = (0.06f * k).coerceIn(0f, 1f)), 1.0f to Color.Transparent,
-        center = c, radius = r * 2.4f,
-    ), r * 2.4f, c)
+        center = c, radius = far,
+    ), far, c)
     drawCircle(Brush.radialGradient(
         0.0f to Color.Transparent, 0.885f to Color.Transparent, 0.94f to Color(0xFF6FB4F0).copy(alpha = (0.075f * k).coerceIn(0f, 1f)), 1.0f to Color.Transparent,
-        center = c, radius = r * 1.32f,
-    ), r * 1.32f, c)
+        center = c, radius = ring,
+    ), ring, c)
 }
 
 /** にじむ光の層 (このあと GPU でぼかす): 縁・右上の反射・下側の反射と光点・目 */

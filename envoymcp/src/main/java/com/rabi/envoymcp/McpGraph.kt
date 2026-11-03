@@ -15,6 +15,7 @@ import com.rabi.envoymcp.a11y.A11yService
 import com.rabi.envoymcp.arm.ArmController
 import com.rabi.envoymcp.arm.RecordActivity
 import com.rabi.envoymcp.auth.ChatGptAuth
+import com.rabi.envoymcp.call.CallNotes
 import com.rabi.envoymcp.call.CallRecords
 import com.rabi.envoymcp.call.CallScreen
 import com.rabi.envoymcp.call.IncomingCall
@@ -63,9 +64,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -179,6 +182,8 @@ class McpGraph(val context: Context) {
     /** リゲルが代わりに電話している間の画面 (やり取りを文字で) と、その記録 (あとから見る・録音) */
     val callScreen = CallScreen(this)
     val callRecords = CallRecords(context)
+    /** 電話のあと、まだ本人に伝えていないこと (リゲルのタップで開いた音声モードに引き継ぐ) */
+    val callNotes = CallNotes(context)
     /** 写真を言葉で探す (EmbeddingGemma 2。端末の中) */
     val photos = PhotoSearch(this)
     /** 見つけた写真を、画面の下に番号付きで並べる (本人が目で確かめる) */
@@ -432,13 +437,21 @@ class McpGraph(val context: Context) {
     /** 音声モードの画面全体のリゲルをタップした: 道具が動いている間は止める (何もしていなければ何もしない) */
     fun stageTap() { if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) stopByUser("stage") }
 
-    /** リゲルをタップした: 道具が動いている間は止める。何もしていなければ、止めた状態を解いて ChatGPT を開く */
+    /**
+     * リゲルをタップした: 道具が動いている間は止める。何もしていなければ、止めた状態を解いて ChatGPT を開く。
+     * 電話のあとで本人にまだ伝えていないこと (callNotes) があれば、最初の一言で送って伝えてもらう (送れたものだけ消す)
+     */
     fun tapRigel(from: String) {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser(from); return }
         clearStop()
         // 音声モードの真ん中のリゲルを、ChatGPT が開くのを待たずに出す (開けなければ消す)
         voiceStage.expectVoice()
-        voicePrimer.expect()
+        val notes = callNotes.notes.value
+        val handoff = CallNotes.handoff(notes)
+        if (handoff != null) {
+            RabiLog.i("graph", "hand off ${notes.size} call notes")
+            voicePrimer.expectReport(handoff) { callNotes.remove(notes.map { it.id }) }
+        } else voicePrimer.expect()
         if (!openChatGptVoice()) { RabiLog.w("graph", "cannot open ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
     }
 
@@ -478,10 +491,6 @@ class McpGraph(val context: Context) {
     }
 
     /**
-     * リゲルの電話が終わった: ChatGPT の音声モードを開き直し、最初の一言で電話の結果を送って、本人に報告してもらう。
-     * 電話が終わっても、しばらく端末は通話中のまま (音声モードが始まらない) なので、通話中が解けるのを待ってから開く (リゲルの覆いは出したまま)
-     */
-    /**
      * 通話のモードが「呼び出し中」のまま固まって、持ち主が ChatGPT なら、ChatGPT を止めて外す (鳴っている間に ChatGPT の音声を
      * 始めると、ChatGPT は終わるときに始めたときのモードへ戻すため。ADB が使えるときだけ)
      */
@@ -494,7 +503,12 @@ class McpGraph(val context: Context) {
         RabiLog.i("graph", "released stuck ringtone (stopped ChatGPT)")
     }
 
-    fun reopenVoiceAfterCall(report: String) {
+    /**
+     * リゲルの電話が終わった: ChatGPT の音声モードを開き直し、最初の一言で電話の結果を送って、本人に報告してもらう。
+     * 電話が終わっても、しばらく端末は通話中のまま (音声モードが始まらない) なので、通話中が解けるのを待ってから開く (リゲルの覆いは出したまま)。
+     * 開き直せなかったら (次の着信が鳴っている・ChatGPT を開けない) onSkip を呼ぶ (結果は引き継ぎに残してもらう)
+     */
+    fun reopenVoiceAfterCall(report: String, onSkip: () -> Unit = {}) {
         scope.launch(Dispatchers.IO) {
             val am = context.getSystemService(android.media.AudioManager::class.java)
             val t0 = System.currentTimeMillis()
@@ -506,13 +520,15 @@ class McpGraph(val context: Context) {
             // ChatGPT が終わるときに「呼び出し中」のモードへ戻して固まる)
             val t1 = System.currentTimeMillis()
             while (am.mode == android.media.AudioManager.MODE_RINGTONE && System.currentTimeMillis() - t1 < RING_WAIT_MS) delay(300)
-            if (am.mode == android.media.AudioManager.MODE_RINGTONE) { RabiLog.w("graph", "still ringing: skip reopening ChatGPT voice"); return@launch }
+            if (am.mode == android.media.AudioManager.MODE_RINGTONE) { RabiLog.w("graph", "still ringing: skip reopening ChatGPT voice"); onSkip(); return@launch }
             RabiLog.i("graph", "reopen ChatGPT voice with the call result")
             callScreen.hide()      // 代行の通話の画面が残っていれば消す (ChatGPT を開く操作の邪魔をしない)
             withContext(Dispatchers.Main) {
                 voiceStage.expectVoice()
                 voicePrimer.expectReport(report)
-                if (!openChatGptVoice()) { RabiLog.w("graph", "cannot reopen ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
+                if (!openChatGptVoice()) {
+                    RabiLog.w("graph", "cannot reopen ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() }; onSkip()
+                }
             }
         }
     }
@@ -558,6 +574,7 @@ class McpGraph(val context: Context) {
 
     init {
         overlay = OperationOverlay(context, state, { AvatarStyle.byId(settings.avatar) }, enabled = { settings.bubbleEnabled },
+            badge = callNotes.notes.map { it.size }.stateIn(scope, SharingStarted.Eagerly, callNotes.notes.value.size),
             loadPos = { settings.bubbleX to settings.bubbleY }, savePos = { x, y -> settings.bubbleX = x; settings.bubbleY = y })
         // 操作中のリゲルをタップ: 止める。何もしていなければ ChatGPT の音声モードを開く
         overlay.onTap = { orbTap() }

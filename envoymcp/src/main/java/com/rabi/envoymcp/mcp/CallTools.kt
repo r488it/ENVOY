@@ -161,7 +161,11 @@ internal class CallTools(st: ToolState) : ToolGroup(st) {
             CALL_QUIET + "1〜3 分ほどしたら rigel_call_status で結果を確かめ、利用者に伝えてください。", JSONObject().put("calling", true))
     }
 
-    fun rigelCallStatus(): ToolResult = ok("リゲルの電話の様子です。", g.rigelCaller.statusJson())
+    fun rigelCallStatus(): ToolResult {
+        val status = g.rigelCaller.statusJson()
+        g.rigelCaller.resultDelivered()
+        return ok("リゲルの電話の様子です。", status)
+    }
 
     fun rigelCallHangup(): ToolResult =
         if (!g.rigelCaller.busy) ok("リゲルは電話をしていません。", g.rigelCaller.statusJson())

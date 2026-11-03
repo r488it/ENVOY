@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -45,6 +46,7 @@ import com.rabi.envoymcp.ui.avatar.AvatarStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -55,11 +57,14 @@ import kotlin.math.hypot
 
 /**
  * 他のアプリを使っている間、そのアプリの上に出すリゲル (オーバーレイ)。窓は 3 つ:
- * - 球: 小さな触れる窓。最初は画面の下の中央。押したまま動かすと好きな位置へ動かせる (離した位置を覚える)。
- *   タップ (onTap) と長押し (onHoldStart / onHoldEnd。押している間は話を聞く)
+ * - 球: 小さな触れる窓。リゲルだけを窓いっぱい近くまで大きく描き、ホームのリゲルと同じように動かす (表情も出す)。
+ *   最初は画面の下の中央。押したまま動かすと好きな位置へ動かせる (離した位置を覚える)。
+ *   タップ (onTap) と長押し (onHoldStart / onHoldEnd。押している間は話を聞く)。
+ *   電話のあとで本人にまだ伝えていないことがあれば、右上にその数 (badge) を出す
  * - 字幕の吹き出し: 触れない窓。話している・作業している間だけ、球の上 (球が上半分にあれば下) に出す
  * - 縁の光: 画面全体の触れない窓。作業中 (show / hide) だけ、画面の縁をうっすら光らせる
- * 出すとき: ENVOY MCP の画面が前に出ていない (setOtherAppInFront) 間。設定で切っていても、作業中・返事の途中は出す。承認画面の間は出さない (suppress)
+ * 出すとき: ENVOY MCP の画面が前に出ていない (setOtherAppInFront) 間。設定で切っていても、作業中・返事の途中・まだ伝えていない電話があるときは出す。
+ * 承認画面の間は出さない (suppress)
  * - Android 12 以降、他アプリの窓を通り抜けるタッチは不透明度が 0.8 を超えるとブロックされるため、alpha は 0.8 以下
  * - アクセシビリティの木には出さない (UI 階層の取得に混ざらないように)。画面の画像を取る瞬間だけ隠す (hideWhile)
  * - ENVOY MCP がタップ・スワイプを送る間は、球を素通りにする (passThroughWhile)
@@ -74,6 +79,8 @@ class OperationOverlay(
     private val style: () -> AvatarStyle,
     /** 他のアプリの上に、いつもリゲルを出すか (設定) */
     private val enabled: () -> Boolean = { true },
+    /** 球の右上に出す数 (電話のあとで、本人にまだ伝えていないこと)。0 なら出さない */
+    private val badge: StateFlow<Int> = MutableStateFlow(0),
     /** 球の位置 (画面の中で動かせる幅に対する割合 0〜1)。負なら最初の位置 (下の中央) */
     private val loadPos: () -> Pair<Float, Float> = { -1f to -1f },
     private val savePos: (Float, Float) -> Unit = { _, _ -> },
@@ -111,6 +118,8 @@ class OperationOverlay(
     init {
         // 話している・作業しているかで、球 (設定で切っているとき) と字幕を出し分ける
         scope.launch { state.map { it.mood != Mood.IDLE }.distinctUntilChanged().collect { update() } }
+        // まだ伝えていない電話があれば、設定で切っていても球を出す
+        scope.launch { badge.map { it > 0 }.distinctUntilChanged().collect { update() } }
     }
 
     fun canShow() = Settings.canDrawOverlays(context)
@@ -134,7 +143,7 @@ class OperationOverlay(
         val active = wanted || state.value.mood != Mood.IDLE
         val can = !suppressed && canShow()
         if (stageOn && can) addStage() else { remove(stageWin); stageWin = null }
-        val showOrb = otherApp && can && stageWin == null && (enabled() || active)
+        val showOrb = otherApp && can && stageWin == null && (enabled() || active || badge.value > 0)
         if (showOrb) addOrb() else { remove(caption); remove(orb); caption = null; orb = null }
         if (otherApp && can && wanted) addGlow() else remove(glow).also { glow = null }
         if (showOrb && active) addCaption() else remove(caption).also { caption = null }
@@ -167,7 +176,7 @@ class OperationOverlay(
         if (orb != null) return
         val o = OverlayOwner().also { it.start() }
         val size = (ORB_DP * density).toInt()
-        val v = composeView(o) { OrbContent(state, style()) }
+        val v = composeView(o) { OrbContent(state, style(), badge) }
         val lp = WindowManager.LayoutParams(
             size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -385,12 +394,19 @@ class OperationOverlay(
 }
 
 @Composable
-private fun OrbContent(state: StateFlow<EngineState>, style: AvatarStyle) {
+private fun OrbContent(state: StateFlow<EngineState>, style: AvatarStyle, badge: StateFlow<Int>) {
     val s by state.collectAsState()
-    Box(Modifier.fillMaxSize().padding(4.dp).background(Color(0xCC0B0D12), CircleShape)) {
-        // 何もしていない間は動きを控えめにする (電池のため)
-        Avatar(mood = s.mood, style = style, level = 0f, modifier = Modifier.fillMaxSize().padding(4.dp),
-            signals = AvatarSignals(s.wakeSeq, s.stepSeq, s.stepKind, s.doneSeq), reduceMotion = s.mood == Mood.IDLE)
+    val n by badge.collectAsState()
+    Box(Modifier.fillMaxSize()) {
+        Avatar(mood = s.mood, style = style, level = 0f, modifier = Modifier.fillMaxSize(),
+            signals = AvatarSignals(s.wakeSeq, s.stepSeq, s.stepKind, s.doneSeq, expression = s.expression, expressionSeq = s.expressionSeq,
+                expressionHoldMs = s.expressionHoldMs),
+            compact = true)
+        // まだ伝えていない電話の数 (球の右上の縁に重ねる)
+        if (n > 0) Box(
+            Modifier.align(Alignment.TopEnd).padding(9.dp).size(22.dp).background(Color(0xFF2F6FED), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(if (n > 9) "9+" else "$n", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
     }
 }
 

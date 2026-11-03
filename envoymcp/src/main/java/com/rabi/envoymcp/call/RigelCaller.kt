@@ -232,57 +232,82 @@ class RigelCaller(private val g: McpGraph) {
         }
     }
 
-    /** 電話が終わった: 番号を隠すのをやめ (少し残す)、リゲルの画面に戻す (音声モードを終えていたら、結果を添えて開き直す) */
+    /**
+     * 電話が終わった: 番号を隠すのをやめ (少し残す)、リゲルの画面に戻す (音声モードを終えていたら、結果を添えて開き直す)。
+     * 本人に報告しないとき・開き直せなかったときは、結果を引き継ぎ (CallNotes) に残す (次にリゲルをタップしたときに伝える)
+     */
     private fun cleanUp(ev: JSONObject?) {
         g.numberMask.stopAfter()
+        val c = _live.value
         if (incoming) {
             incoming = false
             endedVoice = false
-            if (ev?.optString("outcome") == "failed") { g.voiceStage.afterRigelCall(); return }   // 出られなかった: 本人が出られるよう、何もしない
-            if (!g.settings.rigelIncomingReport) { g.voiceStage.afterRigelCall(); return }          // ChatGPT は開かない (通話の記録に残すだけ)
+            // 出られなかった: 本人が出られるよう、何もしない (だれも出なければ、IncomingCall が引き継ぎに残す)
+            if (ev?.optString("outcome") == "failed") { g.voiceStage.afterRigelCall(); return }
+            val keep = keeper(c, noteIncoming(ev))
+            if (!g.settings.rigelIncomingReport) { g.voiceStage.afterRigelCall(); keep(); return }          // ChatGPT は開かない (通話の記録と引き継ぎに残す)
             g.voiceStage.releaseHold()
-            g.reopenVoiceAfterCall(reportIncoming(ev))
+            g.reopenVoiceAfterCall(reportIncoming(ev), onSkip = keep)
             return
         }
+        val keep = keeper(c, note(ev))
         if (endedVoice) {
             endedVoice = false
             g.voiceStage.releaseHold()
-            g.reopenVoiceAfterCall(report(ev))
-        } else g.voiceStage.afterRigelCall()
+            g.reopenVoiceAfterCall(report(ev), onSkip = keep)
+        } else {
+            g.voiceStage.afterRigelCall()
+            // かけられなかったときは、頼んだ AI にその場で理由を返しているので残さない
+            if (ev?.optString("outcome") != "failed") keep()
+        }
+    }
+
+    /** 引き継ぎに残す (呼んだとき) */
+    private fun keeper(c: CallInfo?, text: String): () -> Unit = { if (c != null) g.callNotes.add(c.id, c.startedAt, text) }
+
+    /** 結果を AI が受け取った (rigel_call_status): 本人にはその AI が伝えるので、引き継ぎからは消す */
+    fun resultDelivered() {
+        if (result == null) return
+        _live.value?.let { g.callNotes.remove(listOf(it.id)) }
     }
 
     /** ChatGPT に送る電話の結果 (開き直した音声モードの最初の一言)。電話番号は入れない */
-    private fun report(ev: JSONObject?): String {
-        val what = when (ev?.optString("outcome")) {
-            "conveyed", "done" -> "用件を伝えました"
-            "voicemail" -> "留守番電話に用件を残しました"
-            "refused" -> "用件を伝えましたが、断られました"
-            "unclear" -> "用件が伝わったか、はっきりしませんでした"
-            "no_answer" -> "相手が出ませんでした"
-            "hung_up" -> "途中で電話が切れました"
-            "stopped" -> "電話を取りやめました"
-            "timeout" -> "長くなったので電話を切りました"
-            else -> "電話をかけられませんでした" + (ev?.optString("reason")?.takeIf { it.isNotEmpty() }?.let { " ($it)" } ?: "")
-        }
-        val sum = ev?.optString("summary")?.trim().orEmpty()
-        return "（リゲルの電話が終わりました）${to}への電話: $what。" + (if (sum.isNotEmpty()) "要点: $sum。" else "") +
-            "この結果を、私に短く声で伝えてください。"
-    }
+    private fun report(ev: JSONObject?): String =
+        "（リゲルの電話が終わりました）${to}への電話: ${outcome(ev)}。" + summary(ev, "要点") + "この結果を、私に短く声で伝えてください。"
 
     /** かかってきた電話の結果 (開いた音声モードの最初の一言)。電話番号の全体は入れない */
-    private fun reportIncoming(ev: JSONObject?): String {
-        val what = when (ev?.optString("outcome")) {
-            "message", "done", "conveyed" -> "用件を伺いました"
-            "no_message" -> "用件を聞けないまま、電話が終わりました"
-            "hung_up" -> "途中で電話が切れました"
-            "timeout" -> "長くなったので電話を切りました"
-            "stopped" -> "電話を途中でやめました"
-            else -> "用件がはっきりしませんでした"
-        }
-        val sum = ev?.optString("summary")?.trim().orEmpty()
-        return "（リゲルが代わりに電話に出ました）${to}からの電話: $what。" + (if (sum.isNotEmpty()) "内容: $sum。" else "") +
+    private fun reportIncoming(ev: JSONObject?): String =
+        "（リゲルが代わりに電話に出ました）${to}からの電話: ${outcomeIncoming(ev)}。" + summary(ev, "内容") +
             "この内容を、私に分かりやすく整理して、短く声で伝えてください。"
+
+    /** 引き継ぎに残す文 (かけた電話・かかってきた電話) */
+    private fun note(ev: JSONObject?): String = "リゲルが${to}に電話しました: ${outcome(ev)}。" + summary(ev, "要点")
+    private fun noteIncoming(ev: JSONObject?): String = "リゲルが代わりに${to}からの電話に出ました: ${outcomeIncoming(ev)}。" + summary(ev, "内容")
+
+    private fun outcome(ev: JSONObject?): String = when (ev?.optString("outcome")) {
+        "conveyed", "done" -> "用件を伝えました"
+        "voicemail" -> "留守番電話に用件を残しました"
+        "refused" -> "用件を伝えましたが、断られました"
+        "unclear" -> "用件が伝わったか、はっきりしませんでした"
+        "no_answer" -> "相手が出ませんでした"
+        "hung_up" -> "途中で電話が切れました"
+        "stopped" -> "電話を取りやめました"
+        "timeout" -> "長くなったので電話を切りました"
+        else -> "電話をかけられませんでした" + (ev?.optString("reason")?.takeIf { it.isNotEmpty() }?.let { " ($it)" } ?: "")
     }
+
+    private fun outcomeIncoming(ev: JSONObject?): String = when (ev?.optString("outcome")) {
+        "message", "done", "conveyed" -> "用件を伺いました"
+        "no_message" -> "用件を聞けないまま、電話が終わりました"
+        "hung_up" -> "途中で電話が切れました"
+        "timeout" -> "長くなったので電話を切りました"
+        "stopped" -> "電話を途中でやめました"
+        else -> "用件がはっきりしませんでした"
+    }
+
+    /** 「要点: ……。」(無ければ空) */
+    private fun summary(ev: JSONObject?, label: String): String =
+        ev?.optString("summary")?.trim().orEmpty().let { if (it.isNotEmpty()) "$label: $it。" else "" }
 
     private fun finish(ev: JSONObject) {
         result = ev

@@ -9,7 +9,7 @@ import com.rabi.envoymcp.call.IncomingNotice
  * 「通知へのアクセス」の受け口。
  * - Android は、他のアプリの再生 (MediaSession) を読めるのを、通知へのアクセスを許可したアプリだけにしているため、そのために置く
  * - かかってきた電話 (電話・LINE など) の通知から、どのアプリか・かけてきた人・「応答」を読む (IncomingCall)。
- *   それ以外の通知は読まない
+ *   鳴りやんだあとは、通話の通知が続いているか (だれかが出たか) を見る。それ以外の通知は読まない
  */
 class RigelNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() { instance = this }
@@ -23,6 +23,11 @@ class RigelNotificationListener : NotificationListenerService() {
     /** 着信の通知 (無ければ null) */
     fun incomingCall(): IncomingNotice? = runCatching { activeNotifications }.getOrNull().orEmpty()
         .firstNotNullOfOrNull { IncomingNotice.of(it) }
+
+    /** pkg の通話が続いている (出たあとの、消せない通話の通知がある) */
+    fun ongoingCall(pkg: String): Boolean = runCatching { activeNotifications }.getOrNull().orEmpty().any {
+        it.packageName == pkg && isCall(it) && IncomingNotice.of(it) == null && it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0
+    }
 
     companion object {
         @Volatile var instance: RigelNotificationListener? = null

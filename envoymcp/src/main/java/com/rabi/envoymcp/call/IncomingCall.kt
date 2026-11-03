@@ -37,6 +37,8 @@ import kotlinx.coroutines.withContext
  * - どのアプリの着信か (電話・LINE) とかけてきた人は、着信の通知から読む (通知へのアクセスの許可が要る)。読めなければ、
  *   電話のアプリの着信の画面からユーザー補助で読む。番号しか出ていなければ「登録されていない番号（末尾 1234）」にする
  *   (電話番号の全体は ChatGPT にも UNO Q にも渡さない)
+ * - 本人もリゲルも出ないまま鳴りやんだ着信は、引き継ぎ (CallNotes) に残す (次にリゲルをタップしたときに伝える)。
+ *   代わりに出るかを選ばせない設定でも残す。かけてきた人を通知か画面から読めなかったものは、本物の着信か分からないので残さない
  * - 電話: UNO Q がハンズフリーでつないで ATA で出る。LINE: UNO Q がつないだら、通知の「応答」(無ければ画面の「応答」) を押し、
  *   LINE の音の出入り口を「リゲル」にする (LineCaller.watch)
  * - 声で尋ねるとき、着信が鳴っている間は Android が通話の音の出口を受話口にする (そのままでは ChatGPT の声が聞こえない)。
@@ -53,6 +55,11 @@ class IncomingCall(private val g: McpGraph) {
     /** どのアプリの着信か (phone・line) と、着信の通知 (LINE の「応答」を押すのに使う) */
     @Volatile private var app = "phone"
     @Volatile private var notice: IncomingNotice? = null
+    /** かけてきた人を、着信の通知か画面から読めた (本物の着信だと分かる) */
+    @Volatile private var identified = false
+    /** 鳴り始めた時刻と、通話中になった時刻 (だれも出なかった着信を見分ける) */
+    @Volatile private var ringAt = 0L
+    @Volatile private var offhookAt = 0L
     private var speakerJob: Job? = null
     private var askJob: Job? = null
     private var buttons: View? = null
@@ -77,6 +84,7 @@ class IncomingCall(private val g: McpGraph) {
     }
 
     private fun onMode(mode: Int) {
+        if (mode == AudioManager.MODE_IN_CALL) offhookAt = System.currentTimeMillis()
         when {
             mode == AudioManager.MODE_RINGTONE && !ringing -> { ringing = true; RabiLog.i("incoming", "ringing (mode)"); onRinging() }
             // 出た (自分・リゲル) か、鳴りやんだ。ChatGPT の音声モード (通信中) になっただけなら、まだ鳴っているとみなす
@@ -85,22 +93,24 @@ class IncomingCall(private val g: McpGraph) {
     }
 
     private fun onRinging() {
+        val at = System.currentTimeMillis()
+        ringAt = at
         val how = g.settings.rigelIncoming
-        if (how == "off" || g.rigelCaller.busy) return
-        RabiLog.i("incoming", "ringing ($how)")
-        val ringAt = System.currentTimeMillis()
+        // 選ばせないときも、かけてきた人は読む (だれも出なかったら、引き継ぎに残す)
+        val ask = how != "off" && !g.rigelCaller.busy
+        RabiLog.i("incoming", "ringing (${if (ask) how else "no ask"})")
         val auto = g.settings.rigelAutoAnswer
         val wait = if (auto) g.settings.rigelAutoAnswerSec.coerceIn(AUTO_MIN_S, AUTO_MAX_S) * 1000L else ASK_TIMEOUT_MS
         askJob?.cancel()
         askJob = g.scope.launch {
             identify()
-            if (!ringing) return@launch
+            if (!ask || !ringing) return@launch
             asking = true
             val locked = g.context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
             val voiceOn = am.mode == AudioManager.MODE_IN_COMMUNICATION
             if (how == "voice" && !locked && !voiceOn && askByVoice()) askedByVoice = true
             else withContext(Dispatchers.Main) { showButtons() }
-            delay((wait - (System.currentTimeMillis() - ringAt)).coerceAtLeast(0))
+            delay((wait - (System.currentTimeMillis() - at)).coerceAtLeast(0))
             if (asking) {
                 if (auto && ringing) { RabiLog.i("incoming", "no choice: rigel answers (auto)"); choose(true) }
                 else { RabiLog.i("incoming", "no choice"); stopAsking() }
@@ -119,6 +129,28 @@ class IncomingCall(private val g: McpGraph) {
                 g.releaseStuckRingMode()
             }
         }
+        // だれも出なかったら (本人もリゲルも)、引き継ぎに残す
+        val at = ringAt
+        g.scope.launch {
+            delay(MISSED_CHECK_MS)
+            if (ringAt != at || !identified || answered(at)) return@launch
+            RabiLog.i("incoming", "missed ($app)")
+            g.callNotes.add("missed-$at", at, missedNote())
+        }
+    }
+
+    /** 鳴りやんだ着信に、だれか (本人・リゲル) が出たか: 通話中になった・通話の通知が続いている・LINE の通話の画面が出ている */
+    private fun answered(since: Long): Boolean =
+        offhookAt >= since || am.mode == AudioManager.MODE_IN_CALL ||
+            notice?.pkg?.let { RigelNotificationListener.instance?.ongoingCall(it) } == true ||
+            (app == "line" && g.lineCaller.inCallScreen())
+
+    /** だれも出なかった着信の、引き継ぎの文 (電話番号の全体は入れない) */
+    private fun missedNote(): String {
+        val via = if (app == "line") "LINE で" else ""
+        val who = from.takeIf { it.isNotBlank() && it != UNKNOWN_PHONE && it != UNKNOWN_LINE }
+        return if (who != null) "${via}${who}から電話がありました（出られませんでした）。"
+        else "${via}電話がありました（出られませんでした。相手は分かりません）。"
     }
 
     /** 選ばせるのをやめる (ボタンを消す。ChatGPT に尋ねさせていたら、音声モードを終える) */
@@ -287,21 +319,22 @@ class IncomingCall(private val g: McpGraph) {
      * 番号だけなら末尾 4 桁にする
      */
     private suspend fun identify() {
-        notice = null; app = "phone"; from = ""
+        notice = null; app = "phone"; from = ""; identified = false
         repeat(READ_TRIES) {
             val n = runCatching { RigelNotificationListener.instance?.incomingCall() }.getOrNull()
             if (n != null) {
                 notice = n
                 app = if (n.pkg == LineCaller.LINE) "line" else "phone"
-                from = label(n.name.ifBlank { if (app == "line") "LINE の相手" else "電話の相手" })
+                from = label(n.name.ifBlank { if (app == "line") UNKNOWN_LINE else UNKNOWN_PHONE })
+                identified = true
                 RabiLog.i("incoming", "from notification: $app (answer ${n.answer != null})")
                 return
             }
             val name = runCatching { callerOnScreen() }.getOrNull()
-            if (!name.isNullOrBlank() && it >= 3) { from = label(name); RabiLog.i("incoming", "from screen: phone"); return }
+            if (!name.isNullOrBlank() && it >= 3) { from = label(name); identified = true; RabiLog.i("incoming", "from screen: phone"); return }
             delay(READ_POLL_MS)
         }
-        from = "電話の相手"
+        from = UNKNOWN_PHONE
     }
 
     private fun callerOnScreen(): String? {
@@ -332,6 +365,11 @@ class IncomingCall(private val g: McpGraph) {
         const val READ_TRIES = 10
         const val READ_POLL_MS = 250L
         const val STUCK_CHECK_MS = 4_000L
+        /** 鳴りやんでから、だれかが出たかを確かめるまで (出たなら、このうちに通話中・通話の通知になる) */
+        const val MISSED_CHECK_MS = 2_000L
+        /** かけてきた人が分からないとき */
+        const val UNKNOWN_PHONE = "電話の相手"
+        const val UNKNOWN_LINE = "LINE の相手"
         const val SPEAKER_HOLD_MS = 6_000L
         const val SPEAKER_POLL_MS = 500L
         const val LINE_SCREEN_MS = 6_000L

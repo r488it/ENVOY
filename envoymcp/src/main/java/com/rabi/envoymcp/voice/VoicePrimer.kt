@@ -42,25 +42,26 @@ class VoicePrimer(private val g: McpGraph) {
 
     /**
      * リゲルの電話のあと、開き直した音声モードに、電話の結果を最初の一言として送る (ChatGPT に本人へ報告してもらう)。
-     * いつもの最初の一言 (設定) があれば、その後ろに続ける
+     * いつもの最初の一言 (設定) があれば、その後ろに続ける。送れたら onSent を呼ぶ
      */
-    fun expectReport(report: String) {
+    fun expectReport(report: String, onSent: () -> Unit = {}) {
         job?.cancel()
         if (am.mode == AudioManager.MODE_IN_COMMUNICATION) { RabiLog.i("primer", "skip report (voice already on)"); return }
         val base = if (g.settings.voicePrimer) g.settings.voicePrimerText.trim() else ""
         val text = listOf(base, report).filter { it.isNotEmpty() }.joinToString(" ").replace('\n', ' ')
-        job = g.scope.launch(Dispatchers.IO) { send(text, waitVoice = true) }
+        job = g.scope.launch(Dispatchers.IO) { if (send(text, waitVoice = true)) onSent() }
     }
 
     /** 会話を終えるとき: 送っている途中ならやめる (入れた文字は消してから戻る) */
     suspend fun stop() { job?.cancelAndJoin(); job = null }
 
-    private suspend fun send(text: String, waitVoice: Boolean = false) {
-        val svc = A11yService.instance ?: run { RabiLog.w("primer", "skip (no a11y)"); return }
+    /** 送れたら true */
+    private suspend fun send(text: String, waitVoice: Boolean = false): Boolean {
+        val svc = A11yService.instance ?: run { RabiLog.w("primer", "skip (no a11y)"); return false }
         // 音声モードの画面が出たら送る: 入力欄と「終了」(音声モードの画面にしか無い) の両方が見えたとき。
         // 入力欄だけで送ると、前に開いていた文字の会話に送ってしまう。通話モードになるのは待たない
         if (!waitFor(VOICE_WAIT_MS) { svc.inputOf(CHATGPT) != null && svc.hasDesc(CHATGPT, McpGraph.CHATGPT_END_DESC) }) {
-            RabiLog.i("primer", "skip (voice screen did not show)"); return
+            RabiLog.i("primer", "skip (voice screen did not show)"); return false
         }
         RabiLog.i("primer", "voice screen (" + if (am.mode == AudioManager.MODE_IN_COMMUNICATION) "voice on)" else "voice not yet)")
         if (waitVoice && am.mode != AudioManager.MODE_IN_COMMUNICATION) {
@@ -69,14 +70,14 @@ class VoicePrimer(private val g: McpGraph) {
             if (on) delay(VOICE_SETTLE_MS)
         }
         // 本人が何か入れている途中なら、上書きしない
-        if (!svc.inputOf(CHATGPT)?.text.isNullOrEmpty()) { RabiLog.i("primer", "skip (field not empty)"); return }
+        if (!svc.inputOf(CHATGPT)?.text.isNullOrEmpty()) { RabiLog.i("primer", "skip (field not empty)"); return false }
         var typed = false
         var sent = false
         try {
             typed = svc.setInputText(CHATGPT, text)
-            if (!typed) { RabiLog.w("primer", "cannot set text"); return }
+            if (!typed) { RabiLog.w("primer", "cannot set text"); return false }
             // 文字を入れると出る「メッセージを送信」を押す → 入力欄が空に戻れば送れた
-            if (!waitFor(SEND_WAIT_MS) { svc.clickByDesc(CHATGPT, SEND_DESC) }) { RabiLog.w("primer", "no send button"); return }
+            if (!waitFor(SEND_WAIT_MS) { svc.clickByDesc(CHATGPT, SEND_DESC) }) { RabiLog.w("primer", "no send button"); return false }
             sent = waitFor(SEND_WAIT_MS) { svc.inputOf(CHATGPT)?.text.isNullOrEmpty() }
             RabiLog.i("primer", (if (sent) "sent" else "send not confirmed") +
                 if (am.mode == AudioManager.MODE_IN_COMMUNICATION) " (voice on)" else " (voice not yet)")
@@ -85,6 +86,7 @@ class VoicePrimer(private val g: McpGraph) {
                 RabiLog.i("primer", "clear field: " + svc.setInputText(CHATGPT, ""))
             }
         }
+        return sent
     }
 
     private suspend fun waitFor(ms: Long, ok: () -> Boolean): Boolean {
