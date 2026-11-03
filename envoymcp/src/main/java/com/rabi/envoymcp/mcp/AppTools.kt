@@ -17,7 +17,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** アプリの道具: アプリ・ショートカットの一覧と開く、画像を添えてアプリの共有を開く */
+/** アプリの道具: アプリ・ショートカットの一覧と開く、画像などを添えてアプリの共有を開く */
 internal class AppTools(st: ToolState) : ToolGroup(st) {
     fun listApps(): ToolResult {
         val apps = g.launcherApps().sortedBy { it.second }
@@ -65,31 +65,41 @@ internal class AppTools(st: ToolState) : ToolGroup(st) {
         val label = g.appLabel(pkg) ?: pkg
         val png = g.device.captureFullPng() ?: return failed("画面の画像を撮れませんでした。")
         val uri = withContext(Dispatchers.IO) { saveToPictures(png) } ?: return failed("写真に保存できませんでした。")
-        return shareImage(uri, "image/png", pkg, a.optString("text").trim(), a.optString("target", "post"), "画面の画像を写真に保存し、", "画像は写真に保存してあります。")
+        return share(uri, "image/png", pkg, a.optString("text").trim(), a.optString("target", "post"), "画面の画像を写真に保存し、", "画像は写真に保存してあります。")
     }
 
     /**
-     * 画像を添えて、アプリの共有の画面を開く (share_screenshot・share_photo)。done は成功の言葉の頭、keep は失敗のときに添える言葉
+     * ファイル (uri。null なら文だけ) を添えて、アプリの共有の画面を開く (share_screenshot・share_photo・share_call_record)。
+     * done は成功の言葉の頭、keep は失敗のときに添える言葉、what は添えるものの呼び名、note は成功のときに足す言葉、extra は結果に足すもの
      */
-    suspend fun shareImage(uri: Uri, mime: String, pkg: String, text: String, target: String, done: String, keep: String = ""): ToolResult {
+    suspend fun share(uri: Uri?, mime: String, pkg: String, text: String, target: String, done: String, keep: String = "",
+                      what: String = "画像", note: String = "", extra: JSONObject = JSONObject()): ToolResult {
         val label = g.appLabel(pkg) ?: pkg
-        val i = Intent(Intent.ACTION_SEND).setType(mime).setPackage(pkg)
-            .putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        i.clipData = ClipData.newRawUri("", uri)
+        val i = Intent(Intent.ACTION_SEND).setType(if (uri != null) mime else "text/plain").setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (uri != null) {
+            i.putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            i.clipData = ClipData.newRawUri("", uri)
+        }
         if (text.isNotEmpty()) i.putExtra(Intent.EXTRA_TEXT, text)
         // アプリの中に共有先が複数あると、Android がどれで開くかを尋ねる画面を出す (X は投稿とチャット)。
         // 投稿かメッセージかを決めて、その共有先を直接開く
         val targets = runCatching { g.context.packageManager.queryIntentActivities(i, 0).map { it.activityInfo } }.getOrDefault(emptyList())
-        if (targets.isEmpty()) return failed("$label は画像の共有を受け付けません。$keep")
+        if (targets.isEmpty()) return failed("$label は${what}の共有を受け付けません。$keep", extra)
         val chosen = pickShareTarget(targets, target)
         i.component = ComponentName(chosen.packageName, chosen.name)
         val started = withContext(Dispatchers.Main) { runCatching { g.context.startActivity(i) } }
-        if (started.isFailure) return failed("$label は画像の共有を受け付けませんでした (${started.exceptionOrNull()?.javaClass?.simpleName})。$keep")
+        if (started.isFailure) return failed("$label は${what}の共有を受け付けませんでした (${started.exceptionOrNull()?.javaClass?.simpleName})。$keep", extra)
         val after = waitScreen(SHARE_WAIT_MS) { it.pkg == pkg }
-        return if (after != null) ok("$done$label の共有の画面を開きました (画像を添えてあります)。まだ投稿・送信はしていません。", summary(after))
-        else unknown("共有の画面を開く操作は送りましたが、$label の画面になったか確かめられません。$keep")
+        val added = if (uri != null) "${what}を添えてあります" else "文を入れてあります"
+        return if (after != null) ok("$done$label の共有の画面を開きました ($added)。まだ投稿・送信はしていません。$note",
+            summary(after).also { s -> extra.keys().forEach { k -> s.put(k, extra.get(k)) } })
+        else unknown("共有の画面を開く操作は送りましたが、$label の画面になったか確かめられません。$keep", extra)
     }
+
+    /** アプリが、その種類 (mime) のものの共有 (ACTION_SEND) を受け付けるか */
+    fun accepts(pkg: String, mime: String): Boolean = runCatching {
+        g.context.packageManager.queryIntentActivities(Intent(Intent.ACTION_SEND).setType(mime).setPackage(pkg), 0).isNotEmpty()
+    }.getOrDefault(false)
 
     /** 共有先を選ぶ: post は投稿の画面、message はメッセージ・チャット。名前 (クラス名と表示名) で決め、決まらなければ最初のもの */
     private fun pickShareTarget(list: List<ActivityInfo>, target: String): ActivityInfo {

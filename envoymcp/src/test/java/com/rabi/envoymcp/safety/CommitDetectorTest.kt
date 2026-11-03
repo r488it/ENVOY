@@ -24,6 +24,14 @@ class CommitDetectorTest {
         assertEquals(CommitKind.SEND, CommitDetector.kindOf(node(text = "返信")))
     }
 
+    /** LINE の共有で送り先を選んだあとの「転送」も、送る操作として承認を求める */
+    @Test fun lineForwardNeedsApproval() {
+        assertTrue(CommitDetector.looksLikeCommit(node(text = "転送")))
+        assertEquals(CommitKind.SEND, CommitDetector.kindOf(node(text = "転送")))
+        assertTrue(CommitDetector.looksLikeCommit(node(text = "Forward")))
+        assertFalse(CommitDetector.looksLikeCommit(node(text = "転送設定")))
+    }
+
     @Test fun postButtonIdsNeedApproval() {
         assertTrue(CommitDetector.looksLikeCommit(node(id = "com.twitter.android:id/button_tweet")))
         assertTrue(CommitDetector.looksLikeCommit(node(id = "com.example:id/retweet")))

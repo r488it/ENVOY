@@ -104,9 +104,11 @@ object CommitDetector {
         "送信", "送る", "投稿", "購入", "注文", "支払", "決済", "確定", "削除", "消去", "発信", "通話", "シェア", "共有", "公開", "申し込", "申込", "予約する", "契約",
         // 日本語の X は投稿ボタンが「ポストする」(「リポスト」も公開の操作)。これが無いと、承認なしで投稿されてしまう
         "ポスト", "ツイート", "返信", "トゥート",
-        "send", "post", "tweet", "publish", "share", "buy", "purchase", "order", "pay", "checkout", "delete", "remove", "call", "submit", "confirm", "reply",
+        // LINE の共有で送り先を選んだあとの確定は「転送」
+        "転送",
+        "send", "forward", "post", "tweet", "publish", "share", "buy", "purchase", "order", "pay", "checkout", "delete", "remove", "call", "submit", "confirm", "reply",
     )
-    private val idWords = listOf("send", "post", "tweet", "retweet", "repost", "reply", "submit", "buy", "purchase", "pay", "checkout", "delete", "call", "dial", "share", "publish", "confirm")
+    private val idWords = listOf("send", "forward", "post", "tweet", "retweet", "repost", "reply", "submit", "buy", "purchase", "pay", "checkout", "delete", "call", "dial", "share", "publish", "confirm")
 
     /** 一覧・履歴・設定の入口は確定ではない (「通話履歴」「送信済み」など)。 */
     // 「ポストを追加」(X のスレッドに足すだけ)・「下書き」も確定ではない
@@ -143,7 +145,7 @@ object CommitDetector {
             listOf("削除", "消去", "delete", "remove").any { s.contains(Text.norm(it)) } -> CommitKind.DELETE
             listOf("投稿", "公開", "ポスト", "ツイート", "トゥート", "post", "publish", "tweet", "シェア", "共有", "share").any { s.contains(Text.norm(it)) } -> CommitKind.POST
             listOf("発信", "通話", "call", "dial").any { s.contains(Text.norm(it)) } -> CommitKind.CALL
-            listOf("送信", "送る", "返信", "send", "reply", "submit").any { s.contains(Text.norm(it)) } -> CommitKind.SEND
+            listOf("送信", "送る", "返信", "転送", "send", "forward", "reply", "submit").any { s.contains(Text.norm(it)) } -> CommitKind.SEND
             else -> CommitKind.OTHER
         }
     }

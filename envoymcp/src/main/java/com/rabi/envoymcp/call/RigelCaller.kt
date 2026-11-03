@@ -28,6 +28,7 @@ import java.net.Socket
  *   最初の一言で結果を送り、ChatGPT から本人に報告してもらう
  * - 通話の間は、リゲルと相手のやり取りを文字で画面に出し (CallScreen。ボードが言葉を届くたびに送る)、終わったら記録に残す
  *   (CallRecords)。設定で録音がオンなら、ボードが録った通話の音も結果の直前に届くので、一緒に残す (相手には伝えない)
+ * - かかってきた電話は、相手の言葉が届くたびに詐欺の疑いを見直し (ScamCheck)、画面の帯・記録・報告とお知らせに出す
  */
 class RigelCaller(private val g: McpGraph) {
     @Volatile private var job: Job? = null
@@ -244,10 +245,10 @@ class RigelCaller(private val g: McpGraph) {
             endedVoice = false
             // 出られなかった: 本人が出られるよう、何もしない (だれも出なければ、IncomingCall がお知らせに残す)
             if (ev?.optString("outcome") == "failed") { g.voiceStage.afterRigelCall(); return }
-            val keep = keeper(c, noteIncoming(ev))
+            val keep = keeper(c, noteIncoming(ev, c))
             if (!g.settings.rigelIncomingReport) { g.voiceStage.afterRigelCall(); keep(); return }          // ChatGPT は開かない (通話の記録とお知らせに残す)
             g.voiceStage.releaseHold()
-            g.reopenVoiceAfterCall(reportIncoming(ev), onSkip = keep)
+            g.reopenVoiceAfterCall(reportIncoming(ev, c), onSkip = keep)
             return
         }
         val keep = keeper(c, note(ev))
@@ -275,14 +276,20 @@ class RigelCaller(private val g: McpGraph) {
     private fun report(ev: JSONObject?): String =
         "（リゲルの電話が終わりました）${to}への電話: ${outcome(ev)}。" + summary(ev, "要点") + "この結果を、私に短く声で伝えてください。"
 
-    /** かかってきた電話の結果 (開いた音声モードの最初の一言)。電話番号の全体は入れない */
-    private fun reportIncoming(ev: JSONObject?): String =
-        "（リゲルが代わりに電話に出ました）${to}からの電話: ${outcomeIncoming(ev)}。" + summary(ev, "内容") +
-            "この内容を、私に分かりやすく整理して、短く声で伝えてください。"
+    /**
+     * かかってきた電話の結果 (開いた音声モードの最初の一言)。電話番号の全体は入れない。
+     * 詐欺の疑いがあれば、その強さと理由を添え、本人への伝え方 (言い切らない・お金・番号・家族への相談) も頼む
+     */
+    private fun reportIncoming(ev: JSONObject?, c: CallInfo?): String {
+        val risk = risk(c)
+        return "（リゲルが代わりに電話に出ました）${to}からの電話: ${outcomeIncoming(ev)}。" + summary(ev, "内容") + risk +
+            "この内容を、私に分かりやすく整理して、短く声で伝えてください。" + if (risk.isNotEmpty()) ScamCheck.ADVICE else ""
+    }
 
     /** お知らせに残す文 (かけた電話・かかってきた電話) */
     private fun note(ev: JSONObject?): String = "リゲルが${to}に電話しました: ${outcome(ev)}。" + summary(ev, "要点")
-    private fun noteIncoming(ev: JSONObject?): String = "リゲルが代わりに${to}からの電話に出ました: ${outcomeIncoming(ev)}。" + summary(ev, "内容")
+    private fun noteIncoming(ev: JSONObject?, c: CallInfo?): String =
+        "リゲルが代わりに${to}からの電話に出ました: ${outcomeIncoming(ev)}。" + summary(ev, "内容") + risk(c)
 
     private fun outcome(ev: JSONObject?): String = when (ev?.optString("outcome")) {
         "conveyed", "done" -> "用件を伝えました"
@@ -309,6 +316,9 @@ class RigelCaller(private val g: McpGraph) {
     private fun summary(ev: JSONObject?, label: String): String =
         ev?.optString("summary")?.trim().orEmpty().let { if (it.isNotEmpty()) "$label: $it。" else "" }
 
+    /** 「詐欺の疑い: 高い（お金の話・急がせる）。」(無ければ空) */
+    private fun risk(c: CallInfo?): String = c?.let { ScamCheck.sentence(it.risk, it.riskReasons) }.orEmpty()
+
     private fun finish(ev: JSONObject) {
         result = ev
         state = if (ev.optString("outcome") == "failed") "failed" else "done"
@@ -320,8 +330,8 @@ class RigelCaller(private val g: McpGraph) {
                 (0 until t.length()).mapNotNull { i -> t.optJSONArray(i) }
                     .map { r -> CallLine(if (r.optString(0) == "リゲル") "rigel" else "peer", r.optString(1), true, now) }
             }
-            c.copy(state = state, endedAt = now, outcome = ev.optString("outcome"), summary = ev.optString("summary").trim(),
-                reason = ev.optString("reason"), lines = lines.map { it.copy(final = true) })
+            assess(c, c.copy(state = state, endedAt = now, outcome = ev.optString("outcome"), summary = ev.optString("summary").trim(),
+                reason = ev.optString("reason"), lines = lines.map { it.copy(final = true) }))
         }
         _live.value = done
         cleanUp(ev)
@@ -347,10 +357,21 @@ class RigelCaller(private val g: McpGraph) {
         _live.value = if (st == "talking" && c.answeredAt == 0L) c.copy(state = st, answeredAt = System.currentTimeMillis()) else c.copy(state = st)
     }
 
-    /** やり取りの言葉が届いた (画面に出す) */
+    /** やり取りの言葉が届いた (画面に出す)。相手の言葉なら、詐欺の疑いも見直す */
     private fun onText(who: String, text: String, final: Boolean) {
         val c = _live.value ?: return
-        _live.value = c.withText(who, text, final, System.currentTimeMillis())
+        val next = c.withText(who, text, final, System.currentTimeMillis())
+        _live.value = if (who == "peer") assess(c, next) else next
+    }
+
+    /**
+     * 詐欺の疑いを見直す (かかってきた電話だけ。ScamCheck)。強さが変わったらログに残す (強さだけ。言葉・番号は残さない)
+     */
+    private fun assess(before: CallInfo, c: CallInfo): CallInfo {
+        if (c.dir != "in") return c
+        val next = c.withRisk()
+        if (next.risk != before.risk) RabiLog.i("rigelcall", "scam risk ${next.risk.name.lowercase()}")
+        return next
     }
 
     /** 途中の録音を捨てる */

@@ -1,5 +1,7 @@
 package com.rabi.envoymcp.mcp
 
+import android.view.Display
+import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.a11y.A11yService
 import com.rabi.envoymcp.core.Text
 import com.rabi.envoymcp.device.ActionResult
@@ -13,11 +15,15 @@ import com.rabi.envoymcp.parts.TraceCompiler
 import com.rabi.envoymcp.parts.TraceStep
 import com.rabi.envoymcp.safety.CommitDetector
 import com.rabi.envoymcp.safety.CommitResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 画面を操作する道具: クイック設定・通知、タップ (確定は承認のあと)、文字の入力、スクロール、戻る・ホーム、キー、待つ */
+/** 画面を操作する道具: クイック設定・通知、タップ (確定は承認のあと)、指さし (押さずに教える)、文字の入力、スクロール、戻る・ホーム、キー、待つ */
 internal class OperateTools(st: ToolState) : ToolGroup(st) {
     suspend fun openPanel(a: JSONObject): ToolResult {
         val which = a.optString("which")
@@ -30,40 +36,56 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         return ok("開きました。", summary(after))
     }
 
-    suspend fun tap(a: JSONObject): ToolResult {
-        val cur = g.device.observe()
-        if (!cur.ok) return failed("画面を読み取れません (${cur.error})")
-        ownScreen(cur)?.let { return it }
-        val node: UiNode = when {
+    /** element_id・text・visual_id で指定したもの: 部品の一覧の部品か、look_at_screen で見つけたもの (位置だけ)。見つからなければ、その失敗 */
+    private sealed interface Pick {
+        class Node(val node: UiNode) : Pick
+        class Visual(val t: ScreenVision.Target) : Pick
+        class Fail(val r: ToolResult) : Pick
+    }
+
+    /** tap・point_at の指定 (element_id・text・visual_id) に当たるものを、今の画面 cur から探す。did は失敗の言葉に使う (押して・指して) */
+    private fun pick(a: JSONObject, cur: Observation, did: String): Pick {
+        return when {
             a.has("element_id") -> {
-                val prev = lastScreen ?: return failed("先に read_screen で画面を読んでください (番号はそのときのものです)。")
-                val want = prev.nodeById(a.optInt("element_id")) ?: return failed("その番号の部品はありません。read_screen で読み直してください。")
-                // 番号は画面ごとに変わる: 同じ位置・同じ文字の部品が今もあるときだけ押す
-                cur.nodes.firstOrNull { it.bounds == want.bounds && it.label == want.label && it.cls == want.cls }
-                    ?: return failed("画面が変わったので押していません。返した今の画面の一覧から選び直してください。", summary(cur))
+                val prev = lastScreen ?: return Pick.Fail(failed("先に read_screen で画面を読んでください (番号はそのときのものです)。"))
+                val want = prev.nodeById(a.optInt("element_id")) ?: return Pick.Fail(failed("その番号の部品はありません。read_screen で読み直してください。"))
+                // 番号は画面ごとに変わる: 同じ位置・同じ文字の部品が今もあるときだけ
+                cur.nodes.firstOrNull { it.bounds == want.bounds && it.label == want.label && it.cls == want.cls }?.let { Pick.Node(it) }
+                    ?: Pick.Fail(failed("画面が変わったので${did}いません。返した今の画面の一覧から選び直してください。", summary(cur)))
             }
             a.optString("visual_id").isNotBlank() -> {
-                val memo = lastVision ?: return failed("先に look_at_screen で画面を見てください。")
-                val t = memo.targets[a.optString("visual_id")] ?: return failed("その visual_id はありません。look_at_screen で見直してください。")
-                if (cur.signature() != memo.obs.signature()) return failed("画面が変わったので押していません。look_at_screen で見直してください。", summary(cur))
-                // 部品の一覧の部品か、その場所に同じくらいの大きさの名前のある部品があれば、部品として押す (確定なら承認の流れ)
+                val memo = lastVision ?: return Pick.Fail(failed("先に look_at_screen で画面を見てください。"))
+                val t = memo.targets[a.optString("visual_id")] ?: return Pick.Fail(failed("その visual_id はありません。look_at_screen で見直してください。"))
+                if (cur.signature() != memo.obs.signature()) return Pick.Fail(failed("画面が変わったので${did}いません。look_at_screen で見直してください。", summary(cur)))
+                // 部品の一覧の部品か、その場所に同じくらいの大きさの名前のある部品があれば、部品として扱う (押すとき、確定なら承認の流れ)
                 val listed = t.elementId?.let { id -> memo.obs.nodeById(id) }?.let { w -> cur.nodes.firstOrNull { it.bounds == w.bounds && it.label == w.label && it.cls == w.cls } }
                     ?: cur.nodeAt(t.bounds.cx, t.bounds.cy)?.takeIf { it.label.isNotBlank() && overlap(it.bounds, t.bounds) >= SAME_THING }
-                listed ?: return visualTap(cur, t)
+                if (listed != null) Pick.Node(listed) else Pick.Visual(t)
             }
             a.optString("text").isNotBlank() -> {
                 val t = a.optString("text")
                 when (val f = Matcher.find(cur, Selector(text = listOf(t), desc = listOf(t)), emptyMap())) {
-                    is Matcher.Found.One -> f.node
+                    is Matcher.Found.One -> Pick.Node(f.node)
                     is Matcher.Found.Many -> {
                         lastScreen = cur
                         val c = JSONArray(f.nodes.take(6).map { JSONObject().put("element_id", it.index).put("label", it.label).put("b", it.bounds.toString()) })
-                        return failed("「$t」が ${f.nodes.size} 個あるので押していません。element_id で選んでください。", JSONObject().put("candidates", c))
+                        Pick.Fail(failed("「$t」が ${f.nodes.size} 個あるので${did}いません。element_id で選んでください。", JSONObject().put("candidates", c)))
                     }
-                    else -> return failed("「$t」が画面に見つかりません。", summary(cur))
+                    else -> Pick.Fail(failed("「$t」が画面に見つかりません。", summary(cur)))
                 }
             }
-            else -> return failed("element_id・text・visual_id のどれかを指定してください。")
+            else -> Pick.Fail(failed("element_id・text・visual_id のどれかを指定してください。"))
+        }
+    }
+
+    suspend fun tap(a: JSONObject): ToolResult {
+        val cur = g.device.observe()
+        if (!cur.ok) return failed("画面を読み取れません (${cur.error})")
+        ownScreen(cur)?.let { return it }
+        val node: UiNode = when (val p = pick(a, cur, "押して")) {
+            is Pick.Node -> p.node
+            is Pick.Visual -> return visualTap(cur, p.t)
+            is Pick.Fail -> return p.r
         }
         if (node.bounds.area <= 0) return failed("その部品は画面に出ていません。")
         // 確定らしいボタン・設定のスイッチは、承認画面で本人が承認してから押す (部品と同じ流れ)
@@ -102,6 +124,106 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         val w = minOf(a.r, b.r) - maxOf(a.l, b.l); val h = minOf(a.b, b.b) - maxOf(a.t, b.t)
         if (w <= 0 || h <= 0) return 0f
         return w.toFloat() * h / minOf(a.area, b.area).coerceAtLeast(1)
+    }
+
+    /** 指さしの見張り (画面が変わったら消す) */
+    @Volatile private var pointJob: Job? = null
+
+    /**
+     * 指さす (やり方を教える): 指定した部品のまわりに、リゲルの光の枠を出す。押さない (押すのは本人)。
+     * 枠は、時間が来る・ほかの道具が動く (McpTools)・画面が変わる (watchPoint) と消す。
+     * 音声モードの全画面のリゲルが覆っていれば、見えるように外す (ChatGPT そのものの画面は指さない)
+     */
+    suspend fun pointAt(a: JSONObject): ToolResult {
+        if (!g.overlay.canShow()) return failed("「他のアプリの上に表示」の許可が無いため、画面を指せません (スマホの ENVOY MCP の設定で許可できます)。")
+        if (g.approvals.current.value != null) return failed("スマホで承認を待っています。承認が終わってから頼み直してください。")
+        if (g.monitorStage.target != Display.DEFAULT_DISPLAY) return failed("モニターにつないでいる間は、画面を指せません (指せるのはスマホの画面だけです)。")
+        val cur = g.device.observe()
+        if (!cur.ok) return failed("画面を読み取れません (${cur.error})")
+        ownScreen(cur)?.let { return it }
+        if (g.voiceStage.isShowing) {
+            if (cur.pkg == McpGraph.CHATGPT) return failed("今はリゲルの画面 (音声モード) が前に出ていて、指せるアプリの画面がありません。先に open_app などで、やり方を教えるアプリを開いてください。")
+            withContext(Dispatchers.Main) { g.voiceStage.yieldToApp() }
+        }
+        val (target, label) = when (val p = pick(a, cur, "指して")) {
+            is Pick.Node -> p.node.bounds to p.node.label
+            is Pick.Visual -> p.t.bounds to p.t.label
+            is Pick.Fail -> return p.r
+        }
+        // 返す言葉に使う名前 (長い説明は切る。名前の無い部品は「部品」)
+        val name = label.ifBlank { "部品" }.take(POINT_NAME_MAX)
+        // 画面の外にはみ出した分は切る (今の向きの画面の大きさで)
+        val (sw, sh) = g.overlay.screenSize()
+        val b = Bounds(target.l.coerceAtLeast(0), target.t.coerceAtLeast(0), target.r.coerceAtMost(sw), target.b.coerceAtMost(sh))
+        if (b.w <= 0 || b.h <= 0) return failed("「$name」は画面に出ていません。scroll で画面に出してから頼み直してください。", summary(cur))
+        val ms = (a.optDouble("seconds", POINT_DEFAULT_S) * 1000).toLong().coerceIn(POINT_MIN_MS, POINT_MAX_MS)
+        stopPointing()
+        val id = g.overlay.point(b.l, b.t, b.r, b.b, ms)
+        pointJob = g.scope.launch(Dispatchers.IO) { watchPoint(id, cur.pkg, target, label, b) }
+        val where = whereOnScreen(b, sw, sh)
+        return ok("「$name」を、水色に光る枠と小さな矢印で ${ms / 1000} 秒指しました (押してはいません)。場所は${where}です。" +
+            "利用者に、場所を言葉でも伝えて、自分で押してもらってください (例: 「${where}の、水色に光っている『$name』を押してください」)。" +
+            "枠は、利用者が押して画面が変わるか、時間が来るか、ほかの操作の道具を使うと消えます。押せたかは、少し待ってから read_screen で確かめられます。",
+            JSONObject().put("label", name).put("position", where).put("seconds", ms / 1000).put("bounds", b.toString()))
+    }
+
+    /** 指さしを消す (ほかの道具が動き始めたとき) */
+    fun stopPointing() {
+        pointJob?.cancel(); pointJob = null
+        g.overlay.clearPoint()
+    }
+
+    /**
+     * 指さしを見張り、画面が変わったら消す: 前のアプリ (pkg) が替わった・指した部品 (無ければその場所の部品) が動いた・消えた・
+     * 文字やスイッチ・選ばれ方が変わった (本人が押したことが多い)。ユーザー補助があれば部品の木を軽く読み、無ければ ADB で前面の画面の名前だけを見る。
+     * 道具の読み取り (g.device) は使わない (tap が押す前に確かめる「直前に読んだ画面」を変えないように)
+     */
+    private suspend fun watchPoint(id: Int, pkg: String?, target: Bounds, label: String, shown: Bounds) {
+        try {
+            if (A11yService.instance != null) {
+                var base: Observation? = null
+                var anchor: UiNode? = null
+                var misses = 0
+                while (g.overlay.pointing(id)) {
+                    val o = g.a11yDevice.observe(false)
+                    if (o.ok) {
+                        val want = pkg ?: base?.pkg ?: o.pkg
+                        if (base == null) {
+                            // 見比べるもと: 指した画面と同じアプリの木 (覆いを外した直後などは、別の窓が読めることがある。続けば画面が変わった)
+                            if (o.pkg == want) { base = o; anchor = o.nodes.firstOrNull { it.bounds == target && it.label == label } ?: o.nodeAt(shown.cx, shown.cy) }
+                            else if (++misses >= POINT_BASE_TRIES) break
+                        } else {
+                            if (o.pkg != want) break
+                            val a = anchor
+                            if (a != null && o.nodes.none { it.bounds == a.bounds && it.label == a.label && it.cls == a.cls && it.checked == a.checked && it.focused == a.focused }) break
+                        }
+                    }
+                    delay(POINT_POLL_MS)
+                }
+            } else {
+                val base = g.foregroundActivity()
+                while (g.overlay.pointing(id)) {
+                    delay(POINT_ADB_POLL_MS)
+                    if (base == null) continue
+                    val f = g.foregroundActivity() ?: continue
+                    if (f != base) break
+                }
+            }
+        } finally {
+            g.overlay.clearPoint(id)
+        }
+    }
+
+    /** 画面の中の場所を言葉で (画面の右下・画面の上のまん中 など) */
+    private fun whereOnScreen(b: Bounds, w: Int, h: Int): String {
+        val v = when { b.cy < h / 3 -> "上"; b.cy > h * 2 / 3 -> "下"; else -> "まん中" }
+        val s = when { b.cx < w / 3 -> "左"; b.cx > w * 2 / 3 -> "右"; else -> "" }
+        return when {
+            s.isEmpty() && v == "まん中" -> "画面のまん中"
+            s.isEmpty() -> "画面の${v}のまん中"
+            v == "まん中" -> "画面のまん中の${s}側"
+            else -> "画面の$s$v"
+        }
     }
 
     /** 確定の流れ: 画面確認 → スマホで本人が承認 → 画面が変わっていないか確かめる → 押す → 結果を確かめる */
@@ -247,6 +369,17 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         private const val SAME_THING = 0.6f
         /** 承認画面に出す内容 (入力欄の中身) の長さの上限 */
         private const val MAX_CONTENT = 600
+        /** 指さしの長さ (秒。既定) と、その下限・上限 */
+        private const val POINT_DEFAULT_S = 10.0
+        private const val POINT_MIN_MS = 3_000L
+        private const val POINT_MAX_MS = 30_000L
+        /** 指さしの間、画面が変わったかを見る間隔 (ユーザー補助で部品の木を読む・ADB で前面の画面の名前を読む) */
+        private const val POINT_POLL_MS = 700L
+        private const val POINT_ADB_POLL_MS = 1_500L
+        /** 見比べるもとの画面 (指した画面と同じアプリ) が、この回数読めなければ、画面が変わったとみなす */
+        private const val POINT_BASE_TRIES = 3
+        /** 指さしの返事に出す部品の名前の長さの上限 */
+        private const val POINT_NAME_MAX = 40
         /** press_key で押せる名前つきのキー (Enter は送信になるので入れない) */
         private val KEYS = mapOf(
             "space" to "KEYCODE_SPACE", "escape" to "KEYCODE_ESCAPE", "esc" to "KEYCODE_ESCAPE", "tab" to "KEYCODE_TAB",

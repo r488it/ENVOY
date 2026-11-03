@@ -193,5 +193,17 @@
         <receiver
             android:name="com.rabi.launcher.adb.PairingReceiver"
             android:exported="false" />
+
+        <!-- 通話の記録の録音を、共有の先のアプリ (LINE など) に渡す (share_call_record。渡すときだけ、開くアプリに読む許可を付ける)。
+             渡せる場所は res/xml/share_paths.xml (通話の記録のフォルダだけ) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
     </application>
 </manifest>

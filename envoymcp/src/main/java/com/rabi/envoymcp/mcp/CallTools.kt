@@ -3,8 +3,12 @@ package com.rabi.envoymcp.mcp
 import android.app.KeyguardManager
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import com.rabi.envoymcp.a11y.A11yService
+import com.rabi.envoymcp.call.CallInfo
 import com.rabi.envoymcp.call.PhoneContacts
+import com.rabi.envoymcp.call.ScamCheck
+import com.rabi.envoymcp.call.outcomeLabel
 import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.parts.ApprovalLevel
 import com.rabi.envoymcp.parts.CommitKind
@@ -12,9 +16,13 @@ import com.rabi.envoymcp.safety.ApprovalDecision
 import com.rabi.envoymcp.safety.ApprovalRequest
 import com.rabi.envoymcp.safety.ConsumeResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 電話の道具。
@@ -22,8 +30,9 @@ import org.json.JSONObject
  *   指紋など・承認画面・承認なし) → TelecomManager で発信。番号は ChatGPT に返さない (選んだ人の名前と、種類・下 4 桁だけ)
  * - リゲルが代わりに電話して用件を伝える (電話・LINE)、その様子と結果、途中でやめる
  * - かかってきた電話に、リゲルが代わりに出るかを受ける
+ * - リゲルの電話の記録 (要点と録音) を、アプリの共有に添えて開く (送信は本人の承認のあと tap で)
  */
-internal class CallTools(st: ToolState) : ToolGroup(st) {
+internal class CallTools(st: ToolState, private val apps: AppTools) : ToolGroup(st) {
     /** 電話の相手 (名前・番号の種類・番号)。名前が無いのは、連絡先にない番号 */
     private class PhoneTarget(val name: String, val kind: String, val number: String) {
         /** 本人確認や返事に出す相手 (番号は下 4 桁だけ) */
@@ -180,6 +189,68 @@ internal class CallTools(st: ToolState) : ToolGroup(st) {
             JSONObject().put("choice", if (rigel) "rigel" else "self"))
     }
 
+    /**
+     * リゲルが代わりにかけた・出た電話の記録を、アプリの共有に添えて開く (家族に送るなど)。要点の文と、録音 (あれば) を添える。送信はしない。
+     * 録音は FileProvider で、開くアプリにだけ読む許可を付けて渡す。アプリが音声のファイルを受け付けなければ文だけ。
+     * ファイルを添えると文を入れないアプリ (LINE など) があるので、文 (改行なし) も結果に入れて、あとで入力欄に入れられるようにする
+     */
+    suspend fun shareCallRecord(a: JSONObject): ToolResult {
+        val (pkg, why) = resolveApp(a.optString("app"))
+        if (pkg == null) return failed(why)
+        val want = a.optString("call").trim().ifEmpty { "last" }
+        if (want == "last" && g.rigelCaller.busy) return failed("リゲルは今、電話をしています。電話が終わってから頼み直してください。")
+        val list = withContext(Dispatchers.IO) { recordsAfterSave(want == "last") }
+            ?: return failed("さっきの電話の記録が、まだ保存されていません (つながらなかった電話は残しません)。少し待ってから頼み直してください。")
+        if (list.isEmpty()) return failed("リゲルが代わりにかけた・出た電話の記録がありません。")
+        val c = (if (want == "last") list.first() else list.firstOrNull { it.id == want })
+            ?: return failed("その記録 ($want) は見つかりません。最近の記録 (recent) から id を選んでください。", JSONObject().put("recent", JSONArray(list.take(RECENT_MAX).map {
+                JSONObject().put("id", it.id).put("when", WHEN_FMT.format(Date(it.startedAt))).put("name", it.name).put("dir", it.dir).put("outcome", it.outcomeLabel())
+            })))
+        val text = recordText(c, a.optString("text").trim())
+        val label = g.appLabel(pkg) ?: pkg
+        val target = a.optString("target").ifBlank { "message" }
+        val about = "電話の記録 (${WHEN_FMT.format(Date(c.startedAt))}・${c.name}) を共有するため、"
+        val extra = JSONObject().put("call_id", c.id).put("text_to_type", text.replace("\n", " ／ "))
+        val file = withContext(Dispatchers.IO) { g.callRecords.audioFile(c) }
+        if (file != null) {
+            val mime = if (file.name.endsWith(".wav")) "audio/wav" else "audio/mp4"
+            val uri = runCatching { FileProvider.getUriForFile(g.context, "${g.context.packageName}$PROVIDER", file) }
+                .onFailure { RabiLog.w("mcp", "call record uri failed: ${it.javaClass.simpleName}") }.getOrNull()
+            if (uri != null && apps.accepts(pkg, mime))
+                return apps.share(uri, mime, pkg, text, target, about, what = "要点の文と録音", note = TYPE_LATER,
+                    extra = extra.put("recording", true))
+        }
+        val note = if (file == null) "この電話には録音がありません (文だけです)。" else "$label は録音 (音声のファイル) の共有を受け付けないので、文だけにしました。"
+        return apps.share(null, "text/plain", pkg, text, target, about, what = "要点の文", note = note, extra = extra.put("recording", false))
+    }
+
+    /**
+     * 記録の一覧 (新しい順)。waitLast なら、終わったばかりの電話の記録を保存し終えるまで少し待つ (録音の変換に少しかかる)。
+     * 待っても保存されなければ null (古い記録を「いちばん新しい」と取り違えないように)
+     */
+    private suspend fun recordsAfterSave(waitLast: Boolean): List<CallInfo>? {
+        val just = g.rigelCaller.live.value?.takeIf { waitLast && it.ended && System.currentTimeMillis() - it.endedAt < JUST_ENDED_MS }?.id
+        val until = System.currentTimeMillis() + SAVE_WAIT_MS
+        while (true) {
+            val list = g.callRecords.list()
+            if (just == null || list.any { it.id == just }) return list
+            if (System.currentTimeMillis() > until) return null
+            delay(300)
+        }
+    }
+
+    /** 共有する文: 何の電話か・相手 (記録の名前。番号の全体は入れない)・日時・結果・伝えたこと・要点・詐欺の疑い (あれば)・足す言葉 */
+    private fun recordText(c: CallInfo, extra: String): String = buildList {
+        add(if (c.dir == "in") "リゲル (AI アシスタント) が代わりに出た電話の記録です。" else "リゲル (AI アシスタント) が代わりにかけた電話の記録です。")
+        add("相手: ${c.name}" + if (c.app == "line") " (LINE)" else "")
+        add("日時: ${WHEN_FMT.format(Date(c.startedAt))}")
+        add("結果: ${c.outcomeLabel()}")
+        if (c.dir != "in" && c.message.isNotBlank()) add("伝えたこと: ${c.message}")
+        if (c.summary.isNotBlank()) add((if (c.dir == "in") "用件: " else "相手の返事: ") + c.summary)
+        ScamCheck.label(c.risk, c.riskReasons).takeIf { it.isNotEmpty() }?.let { add(it) }
+        if (extra.isNotEmpty()) add(extra)
+    }.joinToString("\n")
+
     companion object {
         /**
          * リゲルの電話の間、ChatGPT に黙っていてもらう (ChatGPT の返事は、つながっている「リゲル」に流れて通話の音に入り、
@@ -187,5 +258,16 @@ internal class CallTools(st: ToolState) : ToolGroup(st) {
          */
         private const val CALL_QUIET = "今は返事をせず、電話が終わるまで黙って待ってください (話すと、その声はリゲルの通話の線に入り、" +
             "相手との会話のじゃまになります。利用者にも聞こえません)。"
+        /** 録音を添えたときに足す言葉 (ファイルを添えると文を入れないアプリがある) */
+        private const val TYPE_LATER = "LINE などは、録音を添えると文を入れないことがあります。送ったあと、トークに文が届いていなければ、" +
+            "text_to_type (改行なし) を入力欄に type_text で入れて、送信を tap してください (承認が要ります)。"
+        /** FileProvider の名前 (パッケージ名の後ろ。AndroidManifest と同じ) */
+        private const val PROVIDER = ".files"
+        /** 終わってからこの間の電話は、保存し終えるのを待つ (最長 SAVE_WAIT_MS) */
+        private const val JUST_ENDED_MS = 60_000L
+        private const val SAVE_WAIT_MS = 10_000L
+        /** 記録が見つからないときに返す、最近の記録の数 */
+        private const val RECENT_MAX = 5
+        private val WHEN_FMT get() = SimpleDateFormat("M月d日 H:mm", Locale.JAPAN)
     }
 }

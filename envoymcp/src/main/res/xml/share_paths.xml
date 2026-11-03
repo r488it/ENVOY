@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider で、ほかのアプリに渡せる場所。通話の記録のフォルダ (files/calls。CallRecords) だけ。
+  渡すのは share_call_record で共有の画面を開くときだけで、開くアプリにだけ読む許可を付ける
+-->
+<paths>
+    <files-path name="calls" path="calls/" />
+</paths>

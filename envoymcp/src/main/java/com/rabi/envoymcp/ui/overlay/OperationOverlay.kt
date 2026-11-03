@@ -2,6 +2,7 @@ package com.rabi.envoymcp.ui.overlay
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -11,6 +12,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowInsets
 import android.view.WindowManager
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -28,14 +30,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,7 +70,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.hypot
 
 /**
@@ -77,6 +93,10 @@ import kotlin.math.hypot
  * 4 つ目の窓「ステージ」: ChatGPT の音声モードの間、画面全体をホームと同じリゲルで覆う (setStage)。
  * - 中身 (リゲル・言葉・下の真ん中の ×) とタッチは stageContent (Compose) が受け持つ。下に通さないので、不透明度の制限はかからない
  * - ステージを出している間は、小さな球と字幕は出さない (リゲルが 2 つにならないように)
+ * 5 つ目「指さし」(point): やり方を教えるとき、押す部品のまわりにリゲルの光の枠を脈打たせ、小さな印で指す。押すのは本人。
+ * - 触れない窓を、部品のまわりの 4 つの帯に分けて出す (部品の上には窓を重ねない)。本人のタッチがどの窓も通らずに部品に届くように
+ *   (触れない窓でも、上に重なっていると「覆われている」とみなして押させないアプリがある)
+ * - 指している間は、縁の光と字幕を出さず、部品に重なる球も消す (操作ではなく教えている。重なった窓は下へのタッチを止めることがある)
  */
 class OperationOverlay(
     private val context: Context,
@@ -147,11 +167,13 @@ class OperationOverlay(
     private fun update() = main.post {
         val active = wanted || state.value.mood != Mood.IDLE
         val can = !suppressed && canShow()
+        val p = point?.takeIf { can }
         if (stageOn && can) addStage() else { remove(stageWin); stageWin = null }
-        val showOrb = otherApp && can && stageWin == null && (enabled() || active || badge.value > 0)
+        val showOrb = otherApp && can && stageWin == null && (enabled() || active || badge.value > 0) && (p == null || !orbOver(p))
         if (showOrb) addOrb() else { remove(caption); remove(orb); caption = null; orb = null }
-        if (otherApp && can && wanted) addGlow() else remove(glow).also { glow = null }
-        if (showOrb && active) addCaption() else remove(caption).also { caption = null }
+        if (otherApp && can && wanted && p == null) addGlow() else remove(glow).also { glow = null }
+        if (showOrb && active && p == null) addCaption() else remove(caption).also { caption = null }
+        if (p != null) addPoint(p) else removePoint()
     }
 
     // ---------------------------------------------------------------- ステージ (音声モードの真ん中)
@@ -207,13 +229,22 @@ class OperationOverlay(
         return Triple(m.bounds.width(), m.bounds.height(), nav)
     }
 
+    /** 画面の大きさ (px。今の向き) */
+    fun screenSize(): Pair<Int, Int> = screen().let { it.first to it.second }
+
     /** 覚えた位置 (無ければ下の中央) に置く */
     private fun placeOrb(lp: WindowManager.LayoutParams) {
+        val (x, y) = orbPos(lp.width, lp.height)
+        lp.x = x; lp.y = y
+    }
+
+    /** 大きさ ow × oh の球を置く位置: 覚えた位置 (無ければ下の中央) */
+    private fun orbPos(ow: Int, oh: Int): Pair<Int, Int> {
         val (w, h, nav) = screen()
         val (fx, fy) = loadPos()
-        val maxX = w - lp.width; val maxY = h - lp.height
-        lp.x = if (fx in 0f..1f) (fx * maxX).toInt() else maxX / 2
-        lp.y = if (fy in 0f..1f) (fy * maxY).toInt() else maxY - nav - (BOTTOM_MARGIN_DP * density).toInt()
+        val maxX = w - ow; val maxY = h - oh
+        return (if (fx in 0f..1f) (fx * maxX).toInt() else maxX / 2) to
+            (if (fy in 0f..1f) (fy * maxY).toInt() else maxY - nav - (BOTTOM_MARGIN_DP * density).toInt())
     }
 
     /** 短く離せばタップ、HOLD_MS 押し続ければ長押し (離したら終わり)、押したまま動かせば移動 */
@@ -316,6 +347,93 @@ class OperationOverlay(
         orb?.let { w -> runCatching { wm.removeView(w.view); wm.addView(w.view, w.lp) } }
     }
 
+    // ---------------------------------------------------------------- 指さし (やり方を教える)
+
+    /** 指している部品の画面の位置 (px)。startedAt から光の脈を数える (帯の窓どうしで脈をそろえる) */
+    private class Point(val id: Int, val l: Int, val t: Int, val r: Int, val b: Int, val startedAt: Long)
+    @Volatile private var point: Point? = null
+    private val pointSeq = AtomicInteger(0)
+    private val pointLock = Any()
+    private var pointWins: List<Win> = emptyList()
+    /** 窓を出している指さしの番号 (0 なら出していない) */
+    private var pointShown = 0
+
+    /**
+     * 画面の部品 (l, t, r, b。画面の座標の px) のまわりに、リゲルの光の枠を脈打たせて出す (押すのは本人)。ms たったら消す。前の指さしは消える。
+     * 返す番号は、消すときに渡す (あとから出した指さしを、前の指さしの後始末で消さないように)
+     */
+    fun point(l: Int, t: Int, r: Int, b: Int, ms: Long): Int {
+        val id = pointSeq.incrementAndGet()
+        synchronized(pointLock) { point = Point(id, l, t, r, b, System.currentTimeMillis()) }
+        update()
+        main.postDelayed({ clearPoint(id) }, ms)
+        return id
+    }
+
+    /** 指さしを消す (id を渡すと、その指さしのときだけ) */
+    fun clearPoint(id: Int = 0) {
+        synchronized(pointLock) {
+            val p = point ?: return
+            if (id != 0 && p.id != id) return
+            point = null
+        }
+        update()
+    }
+
+    /** その指さしを、まだ出しているか */
+    fun pointing(id: Int) = point?.id == id
+
+    /** 球 (今の位置か、出すときの位置) が、指している部品とまわりの枠に重なるか */
+    private fun orbOver(p: Point): Boolean {
+        val size = (ORB_DP * density).toInt()
+        val (x, y) = orb?.lp?.let { it.x to it.y } ?: orbPos(size, size)
+        val m = ((POINT_PAD_DP + POINT_HALO_DP) * density).toInt()
+        return x < p.r + m && x + size > p.l - m && y < p.b + m && y + size > p.t - m
+    }
+
+    /** 部品のまわりの 4 つの帯 (上・下・左・右) に、触れない窓を出す。指す印は部品の上 (上に場所が無ければ下) */
+    private fun addPoint(p: Point) {
+        if (pointShown == p.id) return
+        removePoint()
+        val (sw, sh, _) = screen()
+        val m = ((POINT_PAD_DP + POINT_HALO_DP) * density).toInt()
+        val mark = (POINT_MARK_DP * density).toInt()
+        val above = p.t - m - mark >= 0
+        val strips = listOf(
+            Rect(p.l - m, p.t - m - (if (above) mark else 0), p.r + m, p.t),
+            Rect(p.l - m, p.b, p.r + m, p.b + m + (if (above) 0 else mark)),
+            Rect(p.l - m, p.t, p.l, p.b),
+            Rect(p.r, p.t, p.r + m, p.b),
+        ).map { Rect(it.left.coerceAtLeast(0), it.top.coerceAtLeast(0), it.right.coerceAtMost(sw), it.bottom.coerceAtMost(sh)) }
+            .filter { it.width() > 0 && it.height() > 0 }
+        val glowColor = style().glow
+        pointWins = strips.mapNotNull { s ->
+            val v = composeView(null) { PointContent(glowColor, p.l, p.t, p.r, p.b, s.left, s.top, above, p.startedAt) }
+            val lp = WindowManager.LayoutParams(
+                s.width(), s.height(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = s.left; y = s.top
+                alpha = MAX_ALPHA
+                title = "RabiPoint"
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+            if (hiddenDepth > 0) v.visibility = View.INVISIBLE
+            runCatching { wm.addView(v, lp) }
+                .onFailure { RabiLog.w("overlay", "point failed ${it.javaClass.simpleName}"); (v.tag as? OverlayOwner)?.stop() }
+                .getOrNull()?.let { Win(v, lp, v.tag as? OverlayOwner) }
+        }
+        pointShown = p.id
+    }
+
+    private fun removePoint() {
+        pointWins.forEach { remove(it) }
+        pointWins = emptyList(); pointShown = 0
+    }
+
     // ---------------------------------------------------------------- 共通
 
     private fun composeView(owner: OverlayOwner?, content: @Composable () -> Unit): ComposeView {
@@ -336,7 +454,7 @@ class OperationOverlay(
     }
 
     private fun removeAll() {
-        remove(glow); remove(caption); remove(orb); remove(stageWin)
+        remove(glow); remove(caption); remove(orb); remove(stageWin); removePoint()
         glow = null; caption = null; orb = null; stageWin = null
     }
 
@@ -365,7 +483,7 @@ class OperationOverlay(
 
     /** 画面の画像を取る間だけ隠す (映り込み防止)。描画が消えるのを 2 フレームほど待つ */
     suspend fun <T> hideWhile(block: suspend () -> T): T {
-        if (orb == null && glow == null && stageWin == null) return block()
+        if (orb == null && glow == null && stageWin == null && pointWins.isEmpty()) return block()
         setHidden(true)
         try {
             kotlinx.coroutines.delay(60)
@@ -379,7 +497,7 @@ class OperationOverlay(
         main.post {
             hiddenDepth = (hiddenDepth + if (h) 1 else -1).coerceAtLeast(0)
             val vis = if (hiddenDepth > 0) View.INVISIBLE else View.VISIBLE
-            listOfNotNull(orb, caption, glow, stageWin).forEach { it.view.visibility = vis }
+            (listOfNotNull(orb, caption, glow, stageWin) + pointWins).forEach { it.view.visibility = vis }
             c.resume(Unit)
         }
     }
@@ -395,6 +513,12 @@ class OperationOverlay(
         const val CAPTION_WIDTH = 0.8f
         /** これだけ押し続けたら長押し */
         const val HOLD_MS = 450L
+        /** 指さし: 部品の縁から光の枠までの間・枠の外に広がる光の幅・指す印の場所の高さ (dp) */
+        const val POINT_PAD_DP = 8
+        const val POINT_HALO_DP = 18
+        const val POINT_MARK_DP = 44
+        /** 指さしの光の脈の長さ */
+        const val POINT_PULSE_MS = 1_400L
     }
 }
 
@@ -431,6 +555,56 @@ private fun CaptionContent(state: StateFlow<EngineState>) {
         )
     }
 }
+
+/**
+ * 指さしの帯の窓の中身: 部品 (l, t, r, b。画面の座標) のまわりの光の枠と、指す印 (リゲルの色の小さな球と三角)。
+ * 帯の窓は枠の一部だけを受け持つので、窓の画面の位置だけずらして枠の全体を描く (窓の外は切れる)。
+ * 窓の位置は、頼んだ位置 (x0, y0) ではなく画面に出た位置で合わせる。脈は始めた時刻から数える (帯の窓どうしでそろう)
+ */
+@Composable
+private fun PointContent(glow: Color, l: Int, t: Int, r: Int, b: Int, x0: Int, y0: Int, above: Boolean, startedAt: Long) {
+    val view = LocalView.current
+    var origin by remember { mutableStateOf(Offset(x0.toFloat(), y0.toFloat())) }
+    val phase by produceState(0f) {
+        while (true) withFrameMillis { value = ((System.currentTimeMillis() - startedAt) % OperationOverlay.POINT_PULSE_MS) / OperationOverlay.POINT_PULSE_MS.toFloat() }
+    }
+    Canvas(Modifier.fillMaxSize().onGloballyPositioned {
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
+        origin = Offset(loc[0].toFloat(), loc[1].toFloat())
+    }) {
+        translate(-origin.x, -origin.y) {
+            val pad = OperationOverlay.POINT_PAD_DP.dp.toPx()
+            val tl = Offset(l - pad, t - pad)
+            val sz = Size(r - l + pad * 2, b - t + pad * 2)
+            val rad = minOf(16.dp.toPx(), sz.minDimension / 2)
+            // 外へ広がって消えていく光
+            val grow = phase * 14.dp.toPx()
+            drawRoundRect(glow.copy(alpha = 0.6f * (1f - phase)), tl - Offset(grow, grow), Size(sz.width + grow * 2, sz.height + grow * 2),
+                CornerRadius(rad + grow), style = Stroke(6.dp.toPx()))
+            // 枠: 白い画面でも見えるよう、濃い青の縁の上にリゲルの光の色
+            drawRoundRect(POINT_EDGE, tl, sz, CornerRadius(rad), style = Stroke(7.dp.toPx()))
+            drawRoundRect(glow, tl, sz, CornerRadius(rad), style = Stroke(3.5f.dp.toPx()))
+            // 指す印: 枠の上 (下) で小さく上下する。三角の先を枠に向ける
+            val bob = (1f - cos(phase * 2f * PI.toFloat())) / 2f * 6.dp.toPx()
+            val dir = if (above) -1f else 1f
+            val cx = (l + r) / 2f
+            val tipY = (if (above) tl.y else tl.y + sz.height) + dir * (4.dp.toPx() + bob)
+            val baseY = tipY + dir * 12.dp.toPx()
+            val half = 9.dp.toPx()
+            val tri = Path().apply { moveTo(cx, tipY); lineTo(cx - half, baseY); lineTo(cx + half, baseY); close() }
+            drawPath(tri, POINT_EDGE, style = Stroke(3.dp.toPx()))
+            drawPath(tri, glow)
+            val c = Offset(cx, baseY + dir * 9.dp.toPx())
+            val cr = 10.dp.toPx()
+            drawCircle(Brush.radialGradient(listOf(Color.White, glow, POINT_EDGE), center = c, radius = cr), radius = cr, center = c)
+            drawCircle(POINT_EDGE, radius = cr, center = c, style = Stroke(1.5f.dp.toPx()))
+        }
+    }
+}
+
+/** 指さしの枠と印の縁の色 (白い画面でも見えるように) */
+private val POINT_EDGE = Color(0xFF1E62D0)
 
 @Composable
 private fun GlowContent(style: AvatarStyle) {

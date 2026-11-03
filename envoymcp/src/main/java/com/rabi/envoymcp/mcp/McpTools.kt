@@ -20,6 +20,7 @@ import org.json.JSONObject
  * ChatGPT に出す道具。端末の操作 (ADB・ユーザー補助)・部品・確定の承認を、MCP の道具として出す。考えるのは ChatGPT 側。
  * - 読む: スマホの状態・画面の部品・画面の画像 (設定で切れる)・アプリ・ショートカット・部品の一覧
  * - 操作する: アプリ・ショートカット・クイック設定/通知を開く、タップ、文字入力、スクロール、戻る、ホーム、待つ
+ * - 教える: 押す場所を指して見せる (押さない。押すのは本人)
  * - 部品: 動かす・直前の操作を部品として登録・覚えた部品を消す
  * 安全の決まり:
  * - 送信・投稿・購入・削除・発信らしいボタンや設定のスイッチは、タップでも部品でも、スマホの承認画面で本人が承認してから押す
@@ -64,7 +65,7 @@ class McpTools(private val g: McpGraph) : ToolHost {
     private val operateTools = OperateTools(state)
     private val partTools = PartTools(state)
     private val photoTools = PhotoTools(state, appTools)
-    private val callTools = CallTools(state)
+    private val callTools = CallTools(state, appTools)
     private val voiceTools = VoiceTools(state)
     private val armTools = ArmTools(state)
 
@@ -143,6 +144,21 @@ class McpTools(private val g: McpGraph) : ToolHost {
                 "利用者に尋ねていないときは使わないでください。",
             act = false, caption = "", adb = false, readOnly = false,
             params = props("choice" to enumOf("利用者の答え", "rigel", "self")), required = listOf("choice")) { callTools.rigelIncoming(it) },
+        Tool("share_call_record", "電話の記録を共有する",
+            "リゲルが代わりにかけた・出た電話の記録 (要点と録音) を、指定したアプリの共有に添えて開きます (「さっきの電話の内容を息子に送って」など)。開くだけで、送信はしません。" +
+                "添えるのは、相手 (記録の名前。電話番号は入れません)・日時・結果・要点 (と、記録にあれば詐欺の疑い) の短い文と、録音のファイル (あれば) です。text を入れると、文の最後に足します。" +
+                "先に、送り先と、電話の内容を送ってよいかを利用者に確かめてください。call を省略すると、いちばん新しい記録です " +
+                "(ほかの記録は、call に記録の id を入れます。違う値を入れると、最近の記録の id・日時・相手を返します)。" +
+                "LINE で送る → app=LINE。送り先を選ぶ画面が開くので、read_screen で見て、検索の欄に相手の名前を type_text し、相手を tap して選び、" +
+                "送信 (転送) を tap します (スマホでの承認が要ります)。" +
+                "LINE などは、録音を添えると文を入れないことがあります。送ったあと、トークに文が届いていなければ、結果の text_to_type (改行なし) を" +
+                "トークの入力欄に type_text で入れて、送信を tap してください。",
+            act = true, caption = "電話の記録を共有しています",
+            params = props("app" to str("共有先のアプリの名前かパッケージ名 (LINE など)"),
+                "call" to str("共有する記録 (省略すると last: いちばん新しい記録。ほかは記録の id)"),
+                "text" to str("文の最後に足す言葉 (省略可)"),
+                "target" to enumOf("アプリの中の共有先 (省略すると message: メッセージ・チャット・LINE の送り先の選択。post: 投稿)", "message", "post")),
+            required = listOf("app")) { callTools.shareCallRecord(it) },
         Tool("share_screenshot", "画面の画像を共有する",
             "今の画面の画像を撮って、この端末の写真 (Pictures/ENVOY MCP) に保存し、指定したアプリの共有に画像を添えて開きます。" +
                 "例: 画面のスクリーンショットを X に投稿したいとき (X の投稿の画面が、画像が付いた状態で開きます)。text を入れると、一緒に入れます。" +
@@ -199,6 +215,20 @@ class McpTools(private val g: McpGraph) : ToolHost {
             act = true, caption = "画面を操作しています", timeoutMs = APPROVAL_TIMEOUT_MS,
             params = props("element_id" to int("部品の一覧の番号"), "text" to str("押す部品の文字か説明 (element_id が無いとき)"),
                 "visual_id" to str("look_at_screen が返した番号 (v1 など)"))) { operateTools.tap(it) },
+        // 押さずに指して教える: 操作ではないので、縁の光・字幕・操作中の顔は出さない (quiet)
+        Tool("point_at", "押す場所を指して教える",
+            "画面の部品を、押さずに指して見せます (やり方を教える)。利用者が「やり方を教えて」「自分でやってみたい」「どこを押すの」と言ったときは、" +
+                "tap で代わりに押すのではなく、これで押す場所を見せて、利用者に自分で押してもらいます。" +
+                "指定は tap と同じで、element_id (部品の一覧の番号)・text (部品の文字)・visual_id (look_at_screen の番号) のどれかです。" +
+                "部品のまわりに水色に光る枠と小さな矢印を seconds 秒 (省略すると 10 秒、30 秒まで) 出します。枠は重ねて見せるだけで、利用者はそのまま下のボタンを押せます。" +
+                "呼んだら、返した場所 (position) を使って、場所を言葉でも伝えてください (例: 「画面の右下の、水色に光っている『送信』を押してください」)。" +
+                "ENVOY MCP は押しません。枠は、利用者が押して画面が変わる・時間が来る・ほかの操作の道具を使うと消えます " +
+                "(read_screen・look_at_screen・get_screenshot・get_state・wait では消えないので、押せたかを確かめられます)。" +
+                "ChatGPT の音声モードの画面そのものは指せません (先に open_app などで、やり方を教えるアプリを開きます)。",
+            act = false, caption = "", readOnly = false, quiet = true,
+            params = props("element_id" to int("部品の一覧の番号"), "text" to str("指す部品の文字か説明 (element_id が無いとき)"),
+                "visual_id" to str("look_at_screen が返した番号 (v1 など)"),
+                "seconds" to num("指している秒数 (3〜30。省略すると 10)"))) { operateTools.pointAt(it) },
         Tool("type_text", "文字を入力する",
             "入力欄に文字を入れます。element_id (read_screen の番号) を指定すると、その欄を押してから入れます (中身があれば消してから)。" +
                 "改行は入れません (送信になることがあるため)。パスワード欄には入れません。入れたあと、画面で確かめた結果を返します。" +
@@ -374,6 +404,8 @@ class McpTools(private val g: McpGraph) : ToolHost {
         if (tool.adb) needDevice()?.let { g.log.add(name, false, it); return failed(it) }
         // ADB で操作するときは、しばらく使っていなかった接続を、画面を変える前に確かめ直す (切れていればつなぎ直す)
         if (tool.act && g.usingAdb() && !g.adb.probeIfIdle()) { g.log.add(name, false, "接続を確かめられない"); return failed("端末の操作の接続を確かめられませんでした。少し待ってから頼み直してください。") }
+        // 指さし (point_at) は、ほかの道具が動き始めたら消す。画面を読む・待つだけの道具では消さない (教えている途中に、押せたかを確かめられるように)
+        if (name !in KEEP_POINT) operateTools.stopPointing()
         RabiLog.i("mcp", "tool $name")
         if (!tool.quiet) g.beginWork(tool.caption, tool.act)
         // 道具は別の仕事として動かす (リゲルのタップで止めると、この仕事だけが止まり、ChatGPT には「止めた」と返す)
@@ -431,5 +463,7 @@ class McpTools(private val g: McpGraph) : ToolHost {
         /** 腕を動かす道具の上限 (大きく動かすと、速さの上限で 30 秒ほどかかる) */
         const val ARM_MOVE_TIMEOUT_MS = 45_000L
         private const val ADB_CONNECT_MS = 8_000L
+        /** 動いても指さしを消さない道具 (画面を読む・待つ・表情を見せるだけ) */
+        private val KEEP_POINT = setOf("get_state", "read_screen", "get_screenshot", "look_at_screen", "wait", "rigel_expression")
     }
 }

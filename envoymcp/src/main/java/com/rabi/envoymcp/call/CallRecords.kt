@@ -50,6 +50,9 @@ data class CallInfo(
     val lastWho: String = "",
     /** 録音のファイル (記録のフォルダの中の名前。無ければ空) */
     val audio: String = "",
+    /** 詐欺の疑い (かかってきた電話で、相手の言葉から見る。ScamCheck) と、その理由 (話の種類の短い名前) */
+    val risk: ScamCheck.Level = ScamCheck.Level.NONE,
+    val riskReasons: List<String> = emptyList(),
 ) {
     val talking get() = answeredAt > 0L
     val ended get() = endedAt > 0L
@@ -68,10 +71,14 @@ data class CallInfo(
         return copy(lines = next, lastTextAt = now, lastWho = who, answeredAt = if (answeredAt == 0L) now else answeredAt)
     }
 
+    /** 詐欺の疑いを、ここまでの相手の言葉から見直す */
+    fun withRisk(): CallInfo = ScamCheck.check(lines).let { copy(risk = it.level, riskReasons = it.reasons) }
+
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("dir", dir).put("app", app).put("name", name).put("message", message)
         .put("started_at", startedAt).put("answered_at", answeredAt).put("ended_at", endedAt)
         .put("outcome", outcome).put("summary", summary).put("reason", reason).put("audio", audio)
+        .put("risk", risk.name.lowercase()).put("risk_reasons", JSONArray(riskReasons))
         .put("lines", JSONArray().apply { lines.forEach { put(JSONObject().put("who", it.who).put("text", it.text).put("at", it.at)) } })
 
     companion object {
@@ -80,6 +87,9 @@ data class CallInfo(
             message = o.optString("message"), state = "done", startedAt = o.optLong("started_at"), answeredAt = o.optLong("answered_at"),
             endedAt = o.optLong("ended_at"), outcome = o.optString("outcome"), summary = o.optString("summary"), reason = o.optString("reason"),
             audio = o.optString("audio"),
+            // risk の無い記録は「なし」
+            risk = ScamCheck.Level.of(o.optString("risk")),
+            riskReasons = o.optJSONArray("risk_reasons")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(),
             lines = o.optJSONArray("lines")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i) }
                 .map { CallLine(it.optString("who"), it.optString("text"), true, it.optLong("at")) } }.orEmpty(),
         )

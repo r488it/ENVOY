@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +78,7 @@ import kotlinx.coroutines.launch
 
 /**
  * リゲルが代わりに電話している間の画面 (リゲルと相手のやり取りを文字で出す)。相手・通話の時間・「リゲルが話しています」などの帯・やり取り (文字)・切るボタン。
+ * かかってきた電話で詐欺の疑いがあれば (ScamCheck)、一番上に「詐欺の疑い: 高い（お金の話・急がせる）」の帯を出す
  * - かける・出る、どちらも、ボードが通話に入れたところ (RigelCaller の place のあと) で出し、通話が終わって少ししたら消す
  * - ユーザー補助の窓で出す (電話・LINE の通話の画面やロック画面の上にも出る。下の LINE の画面もユーザー補助で読めるまま)。
  *   ユーザー補助がオフなら、ほかのアプリの上に表示の許可で出す。どちらも無ければ出さない (電話の画面が見えるだけ)
@@ -160,6 +162,13 @@ internal val CALL_DIM = Color(0xFF7F90A8)
 internal val CALL_RIGEL = Color(0xFF9FD8FF)
 internal val CALL_TEXT = Color(0xFFE8EEF7)
 internal val CALL_PEER_TEXT = Color(0xFFD7F5E6)
+/** 詐欺の疑いの帯・札 (高い: 赤・気をつけて: 黄) */
+private val RISK_HIGH_BG = Color(0xFFC62828)
+private val RISK_HIGH_LINE = Color(0xFFFF8A80)
+private val RISK_HIGH_TEXT = Color.White
+private val RISK_CAUTION_BG = Color(0xFFFFB300)
+private val RISK_CAUTION_LINE = Color(0xFFFFE082)
+private val RISK_CAUTION_TEXT = Color(0xFF231A00)
 /** 言葉が届いてから、まだ話していることにする長さ */
 private const val SPEAK_HOLD_MS = 1_500L
 
@@ -175,7 +184,11 @@ fun CallScreenContent(g: McpGraph, navBottom: Dp) {
     val glow = remember { AvatarStyle.byId(g.settings.avatar).glow }
     Box(Modifier.fillMaxSize().background(CALL_BG)) {
         Column(Modifier.fillMaxSize().padding(bottom = navBottom + 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(36.dp))
+            // 詐欺の疑い (相手の言葉が届くたびに見直したもの)。あれば一番上に
+            if (c.risk != ScamCheck.Level.NONE) {
+                ScamBanner(c.risk, c.riskReasons, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp))
+                Spacer(Modifier.height(4.dp))
+            } else Spacer(Modifier.height(36.dp))
             CallerCircle(ringing = !c.talking && !c.ended, diameter = 112.dp)
             Spacer(Modifier.height(18.dp))
             Text(c.name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -254,6 +267,29 @@ fun CallTranscript(lines: List<CallLine>, modifier: Modifier = Modifier, hint: S
             }
         }
     }
+}
+
+/** 詐欺の疑いの帯 (高い: 赤・気をつけて: 黄。なしなら出さない)。お年寄りにも読めるよう大きな字で、強さと理由を 2 段に */
+@Composable
+fun ScamBanner(level: ScamCheck.Level, reasons: List<String>, modifier: Modifier = Modifier) {
+    if (level == ScamCheck.Level.NONE) return
+    val high = level == ScamCheck.Level.HIGH
+    val fg = if (high) RISK_HIGH_TEXT else RISK_CAUTION_TEXT
+    val shape = RoundedCornerShape(16.dp)
+    Column(modifier.clip(shape).background(if (high) RISK_HIGH_BG else RISK_CAUTION_BG).border(2.dp, if (high) RISK_HIGH_LINE else RISK_CAUTION_LINE, shape)
+        .clearAndSetSemantics { contentDescription = ScamCheck.label(level, reasons) }.padding(horizontal = 18.dp, vertical = 12.dp)) {
+        Text(ScamCheck.title(level), color = fg, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Black)
+        if (reasons.isNotEmpty()) Text(reasons.joinToString("・"), color = fg, fontSize = 18.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** 記録の一覧に出す、小さな「詐欺の疑い: 高い」の札 (なしなら出さない) */
+@Composable
+fun ScamChip(level: ScamCheck.Level, modifier: Modifier = Modifier) {
+    if (level == ScamCheck.Level.NONE) return
+    val high = level == ScamCheck.Level.HIGH
+    Text(ScamCheck.title(level), color = if (high) RISK_HIGH_TEXT else RISK_CAUTION_TEXT, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(if (high) RISK_HIGH_BG else RISK_CAUTION_BG).padding(horizontal = 10.dp, vertical = 3.dp))
 }
 
 /** 相手の丸 (人の形)。呼び出し中は、まわりに緑の輪が広がる (rings: 輪の場所を空けておく) */

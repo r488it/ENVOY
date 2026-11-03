@@ -67,6 +67,9 @@ import com.rabi.envoymcp.call.CallInfo
 import com.rabi.envoymcp.call.CallTranscript
 import com.rabi.envoymcp.call.CallerCircle
 import com.rabi.envoymcp.call.MiniOrb
+import com.rabi.envoymcp.call.ScamBanner
+import com.rabi.envoymcp.call.ScamCheck
+import com.rabi.envoymcp.call.ScamChip
 import com.rabi.envoymcp.call.mmss
 import com.rabi.envoymcp.call.outcomeLabel
 import com.rabi.envoymcp.call.outcomeOk
@@ -82,7 +85,7 @@ import java.util.Locale
 
 /**
  * 通話の記録 (リゲルが代わりにかけた・出た電話のやり取りを、あとから見る。録音も聞く)。
- * 一覧 (新しい順) → 1 本のまとめ・録音・やり取り (文字)。消せる。
+ * 一覧 (新しい順) → 1 本のまとめ・録音・やり取り (文字)。消せる。詐欺の疑いがあった電話は、一覧に札、まとめの上に帯を出す。
  * 中身はこのスマホの中だけ (CallRecords)。設定の「リゲルが代わりに電話する」から開く
  */
 class CallLogActivity : ComponentActivity() {
@@ -155,6 +158,7 @@ private fun CallRow(c: CallInfo, onOpen: () -> Unit) {
             Spacer(Modifier.height(2.dp))
             Text(listOfNotNull(dirLabel(c), DATE_FMT.format(Date(c.startedAt)), c.talkSec.takeIf { it > 0 }?.let { durLabel(it) }).joinToString(" ・ "),
                 color = CALL_SUB, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (c.risk != ScamCheck.Level.NONE) { Spacer(Modifier.height(6.dp)); ScamChip(c.risk) }
         }
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
@@ -177,6 +181,10 @@ private fun CallDetail(g: McpGraph, c: CallInfo, onBack: () -> Unit, onDelete: (
         Spacer(Modifier.height(14.dp))
         Text(if (c.dir == "in") "代わりに出た電話" else "電話のまとめ", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(18.dp))
+        if (c.risk != ScamCheck.Level.NONE) {
+            ScamBanner(c.risk, c.riskReasons, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(14.dp))
+        }
         val shape = RoundedCornerShape(17.dp)
         Column(Modifier.fillMaxWidth().clip(shape).background(CARD_BG).border(1.dp, CARD_LINE, shape).padding(20.dp)) {
             if (c.dir == "in") {

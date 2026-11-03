@@ -59,7 +59,7 @@ internal class PhotoTools(st: ToolState, private val apps: AppTools) : ToolGroup
         val p = withContext(Dispatchers.IO) { g.photos.photo(id) } ?: return failed("photo_id $id の写真が見つかりません (消えたか、番号が違います)。")
         val when_ = SimpleDateFormat("M月d日", Locale.JAPAN).format(Date(p.takenAt))
         g.photoStrip.hide()             // 共有の画面を見せる (並べた写真を消す)
-        return apps.shareImage(p.uri, p.mime, pkg, a.optString("text").trim(), a.optString("target", "post"), "写真 ($when_ 撮影) を添えて、")
+        return apps.share(p.uri, p.mime, pkg, a.optString("text").trim(), a.optString("target", "post"), "写真 ($when_ 撮影) を添えて、")
     }
 
     companion object {

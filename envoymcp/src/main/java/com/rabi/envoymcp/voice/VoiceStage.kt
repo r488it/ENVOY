@@ -280,6 +280,12 @@ class VoiceStage(private val g: McpGraph) {
     /** 録画の画面が前に出た: すぐ覆いを消す (閉じたあと、ChatGPT と話していれば見張りが出し直す) */
     fun yieldToRecord() { hide() }
 
+    /**
+     * ChatGPT ではないアプリが前にあり、その画面を見せたい (指さしでやり方を教えるとき): 見張りの次の見回りを待たずに、すぐ覆いを消す
+     * (前面を確かめられないときは、見張りは覆いをそのままにするため)。ChatGPT が前に戻れば、見張りが出し直す
+     */
+    fun yieldToApp() { hide() }
+
     private fun startWatch() {
         if (watch?.isActive == true) return
         RabiLog.i("stage", "watch start")
