@@ -24,12 +24,18 @@ class McpSettings(context: Context) {
         get() = p.getString("token", null) ?: newToken()
 
     fun newToken(): String {
-        val r = SecureRandom()
-        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-        val t = (1..TOKEN_LENGTH).map { chars[r.nextInt(chars.length)] }.joinToString("")
+        val t = randomToken()
         p.edit { putString("token", t) }
         return t
     }
+
+    /**
+     * 開発モード: 止めていないエージェントには、権限の制限 (道具のまとまり・読むだけ・期限) をかけない (最初はオフ)。
+     * 確定の前の承認 (承認画面・指紋など) はそのまま
+     */
+    var devNoAgentLimits: Boolean
+        get() = p.getBoolean("dev_no_agent_limits", false)
+        set(v) = p.edit { putBoolean("dev_no_agent_limits", v) }
 
     /** スマホの中で tunnel-client を動かすか (本人が設定でオンにしたときだけ。MCP サーバーが動いているときだけ動く) */
     var tunnelEnabled: Boolean
@@ -228,6 +234,13 @@ class McpSettings(context: Context) {
     companion object {
         const val DEFAULT_PORT = 8765
         const val TOKEN_LENGTH = 32
+        private const val TOKEN_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+        /** 新しい合言葉 (本体の合言葉と、足したエージェントの合言葉で同じ作り方・同じ長さ) */
+        fun randomToken(): String {
+            val r = SecureRandom()
+            return (1..TOKEN_LENGTH).map { TOKEN_CHARS[r.nextInt(TOKEN_CHARS.length)] }.joinToString("")
+        }
     }
 }
 

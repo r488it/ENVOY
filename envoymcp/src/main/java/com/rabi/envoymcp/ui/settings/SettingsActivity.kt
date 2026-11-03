@@ -27,6 +27,7 @@ import com.rabi.envoymcp.McpApp
 import com.rabi.envoymcp.McpService
 import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.voice.VoicePrimer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,10 +83,27 @@ class SettingsActivity : ComponentActivity() {
     }
 
     /** 合言葉の入った URL を写す (クリップボードの見本の表示に出さないよう、秘密の印を付ける) */
-    fun copyUrl() {
-        val clip = ClipData.newPlainText("ENVOY MCP", "http://127.0.0.1:${g.settings.port}/mcp/${g.settings.token}")
+    fun copyUrl() = copySecret("http://127.0.0.1:${g.settings.port}/mcp/${g.settings.token}")
+
+    /** 足したエージェントの合言葉の入った URL を写す */
+    fun copyAgentUrl(id: String) {
+        val a = g.agents.get(id)?.takeIf { !it.main && it.token.isNotEmpty() } ?: return
+        copySecret("http://127.0.0.1:${g.settings.port}/mcp/${a.token}")
+    }
+
+    private fun copySecret(text: String) {
+        val clip = ClipData.newPlainText("ENVOY MCP", text)
         clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
         getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+    }
+
+    /** 開発モード (エージェントの権限の制限をかけない) を切り替え、したことに残す。確定の前の承認は変えない */
+    fun setDevNoAgentLimits(on: Boolean) {
+        if (g.settings.devNoAgentLimits == on) return
+        g.settings.devNoAgentLimits = on
+        g.activity.add(ActivityLog.USER, "dev_mode", if (on) "開発モードをオンにした（エージェントの権限の制限をかけない）" else "開発モードをオフにした",
+            ActivityLog.KIND_ACT, ActivityLog.OK)
+        refresh.intValue++
     }
 
     // ---------------------------------------------------------------- スマホの中の tunnel-client

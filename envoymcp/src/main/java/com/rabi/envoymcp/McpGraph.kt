@@ -31,6 +31,8 @@ import com.rabi.envoymcp.device.AdbDeviceController
 import com.rabi.envoymcp.device.AppShortcuts
 import com.rabi.envoymcp.device.SwitchingDeviceController
 import com.rabi.envoymcp.device.adb.AdbConnector
+import com.rabi.envoymcp.mcp.ActivityLog
+import com.rabi.envoymcp.mcp.Agents
 import com.rabi.envoymcp.mcp.McpServer
 import com.rabi.envoymcp.mcp.McpTools
 import com.rabi.envoymcp.mcp.ScreenVision
@@ -143,8 +145,13 @@ class McpGraph(val context: Context) {
     // ---------------------------------------------------------------- MCP
     /** 道具の記録 (アプリ専用の場所のファイルにも残す。入れ直し・再起動のあとでも調べられるように) */
     val log = ToolLog(java.io.File(context.noBackupFilesDir, "tool_log.json"))
+    /** したこと: AI エージェントとリゲルがしたことを、本人が読める短い文で残す (ホームの「したこと」で見る。この端末の中だけ) */
+    val activity = ActivityLog(java.io.File(context.filesDir, "activity_log.json"))
+    /** エージェント (合言葉ごとの呼び手) と、その権限。本体の ChatGPT は設定の合言葉 */
+    val agents = Agents(Agents.Prefs(context))
     val tools = McpTools(this)
-    val server = McpServer(tools, port = { settings.port }, token = { settings.token }, log = log)
+    val server = McpServer(tools, port = { settings.port }, token = { settings.token }, log = log, agents = agents,
+        unlimited = { settings.devNoAgentLimits })
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
     /** 画面の画像を AI に読ませ、説明と押せそうなもの (位置つき) を文章にする */

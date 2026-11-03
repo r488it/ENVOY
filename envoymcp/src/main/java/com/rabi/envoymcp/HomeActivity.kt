@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.rabi.envoymcp.ui.avatar.Avatar
 import com.rabi.envoymcp.ui.avatar.AvatarGeometry
 import com.rabi.envoymcp.ui.avatar.AvatarSignals
+import com.rabi.envoymcp.ui.activity.ActivityActivity
 import com.rabi.envoymcp.ui.avatar.AvatarStyle
 import com.rabi.envoymcp.ui.calllog.CallLogActivity
 import com.rabi.envoymcp.ui.settings.SettingsActivity
@@ -50,7 +51,7 @@ import com.rabi.envoymcp.ui.settings.SettingsActivity
  * ENVOY MCP のホーム画面。リゲルと「設定」だけを出す (MCP サーバーの状態は設定の画面と通知で分かる)。
  * - 何もしていないときにリゲルをタップすると、ChatGPT のアプリ (できれば音声モード) を開く
  * - 道具が動いている間にタップすると、止める (ChatGPT を開くのとは分ける)
- * - 下の「設定」から、MCP サーバーのオン・オフと接続の情報
+ * - 下の「設定」から、MCP サーバーのオン・オフと接続の情報。左下の「したこと」で、AI エージェントとリゲルがしたことを見る
  */
 class HomeActivity : ComponentActivity() {
     private val g by lazy { (application as McpApp).graph }
@@ -68,7 +69,8 @@ class HomeActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() {} })
         setContent {
             HomeStage(g, onTap = { g.tapRigel("home") }, onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
-                onCalls = { startActivity(Intent(this, CallLogActivity::class.java)) })
+                onCalls = { startActivity(Intent(this, CallLogActivity::class.java)) },
+                onActivity = { startActivity(Intent(this, ActivityActivity::class.java)) })
         }
     }
 
@@ -87,7 +89,8 @@ class HomeActivity : ComponentActivity() {
 }
 
 @Composable
-internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, big: Boolean = false, onCalls: (() -> Unit)? = null) {
+internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, big: Boolean = false, onCalls: (() -> Unit)? = null,
+                       onActivity: (() -> Unit)? = null) {
     val st by g.state.collectAsState()
     val density = LocalDensity.current
     var resumed by remember { mutableIntStateOf(0) }
@@ -131,8 +134,11 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
             // まだ伝えていないお知らせ (電話のあとのこと・定期の依頼の結果) がある (リゲルをタップすると、音声モードの最初に伝える)
             else if (notes.isNotEmpty()) Text("お知らせが ${notes.size} 件あります。リゲルをタップすると伝えます", color = Color(0xFF8FB4FF),
                 fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.padding(bottom = 4.dp))
-            // 設定は真ん中、通話の記録 (リゲルが代わりにかけた・出た電話) は同じ高さの右端
+            // 設定は真ん中、したこと (AI エージェントとリゲルがしたこと) は左端、通話の記録 (リゲルが代わりにかけた・出た電話) は右端
             Box(Modifier.fillMaxWidth()) {
+                if (onActivity != null) TextButton(onClick = onActivity, modifier = Modifier.align(Alignment.CenterStart)) {
+                    Text("したこと", color = Color(0xFF5E6676), fontSize = 15.sp)
+                }
                 TextButton(onClick = onSettings, modifier = Modifier.align(Alignment.Center)) { Text("設定", color = Color(0xFF5E6676), fontSize = 15.sp) }
                 if (onCalls != null) TextButton(onClick = onCalls, modifier = Modifier.align(Alignment.CenterEnd)) {
                     Text("通話の記録", color = Color(0xFF5E6676), fontSize = 15.sp)

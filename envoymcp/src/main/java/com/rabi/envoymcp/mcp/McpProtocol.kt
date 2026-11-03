@@ -7,10 +7,12 @@ import org.json.JSONTokener
 
 /** 道具の出し手 (本物は McpTools。試験では偽物) */
 interface ToolHost {
-    /** tools/list に出す道具の説明 */
+    /** tools/list に出す道具の説明 (すべて。エージェントごとの絞り込みは McpProtocol がする) */
     fun list(): JSONArray
-    /** 道具を動かす。知らない名前なら null */
-    suspend fun call(name: String, args: JSONObject): ToolResult?
+    /** 道具を動かす。知らない名前なら null。agent は呼んだエージェント (したことの記録に名前を残す。null は本体の ChatGPT) */
+    suspend fun call(name: String, args: JSONObject, agent: Agent? = null): ToolResult?
+    /** このエージェントに許されていない道具を頼まれた: 動かさずに断る (本物は記録にも残す) */
+    fun refuse(name: String, args: JSONObject, agent: Agent): ToolResult = AgentPolicy.refusal(agent)
 }
 
 /**
@@ -36,19 +38,27 @@ data class ToolResult(
 
 /**
  * MCP (JSON-RPC 2.0) の受け答え。HTTP とは切り離してある (HTTP は McpServer が受け持つ)。
- * 対応するのは initialize / ping / tools/list / tools/call と通知 (返事なし)。それ以外は「対応していない」と返す
+ * 対応するのは initialize / ping / tools/list / tools/call と通知 (返事なし)。それ以外は「対応していない」と返す。
+ * エージェントの権限 (AgentPolicy): tools/list はそのエージェントが使える道具だけを出し、許されていない道具の tools/call は動かさずに断る。
+ * unlimited (開発モード) のときは、まとまり・読むだけ・期限の制限をかけない (確定の前の承認は道具の中なので、そのまま)
  */
-class McpProtocol(private val tools: ToolHost, private val version: String, private val instructions: String) {
+class McpProtocol(
+    private val tools: ToolHost,
+    private val version: String,
+    private val instructions: String,
+    private val unlimited: () -> Boolean = { false },
+    private val now: () -> Long = System::currentTimeMillis,
+) {
 
-    /** 届いた本文 (JSON) を処理する。返事の要らないもの (通知・ChatGPT 側からの返事) は null */
-    suspend fun handle(body: String): String? = when (val msg = runCatching { JSONTokener(body).nextValue() }.getOrNull()) {
-        is JSONObject -> handleOne(msg)?.toString()
+    /** 届いた本文 (JSON) を処理する。返事の要らないもの (通知・ChatGPT 側からの返事) は null。agent は呼んだエージェント (null なら絞らない) */
+    suspend fun handle(body: String, agent: Agent? = null): String? = when (val msg = runCatching { JSONTokener(body).nextValue() }.getOrNull()) {
+        is JSONObject -> handleOne(msg, agent)?.toString()
         // JSON-RPC の一括 (配列。MCP の古い版にだけある)。来たら 1 件ずつ
         is JSONArray -> if (msg.length() == 0) error(null, INVALID_REQUEST, "空の一括です").toString() else {
             val out = JSONArray()
             for (i in 0 until msg.length()) {
                 val o = msg.optJSONObject(i)
-                val r = if (o == null) error(null, INVALID_REQUEST, "形が違います") else handleOne(o)
+                val r = if (o == null) error(null, INVALID_REQUEST, "形が違います") else handleOne(o, agent)
                 if (r != null) out.put(r)
             }
             if (out.length() == 0) null else out.toString()
@@ -56,7 +66,7 @@ class McpProtocol(private val tools: ToolHost, private val version: String, priv
         else -> error(null, PARSE_ERROR, "JSON を読めません").toString()
     }
 
-    private suspend fun handleOne(m: JSONObject): JSONObject? {
+    private suspend fun handleOne(m: JSONObject, agent: Agent?): JSONObject? {
         val method = m.optString("method", "")
         val hasId = m.has("id")
         // 通知 (id なし) と、こちらへの返事 (method なし) には答えない
@@ -68,10 +78,11 @@ class McpProtocol(private val tools: ToolHost, private val version: String, priv
             when (method) {
                 "initialize" -> result(id, initialize(params))
                 "ping" -> result(id, JSONObject())
-                "tools/list" -> result(id, JSONObject().put("tools", tools.list()))
+                "tools/list" -> result(id, JSONObject().put("tools", listFor(agent)))
                 "tools/call" -> {
                     val name = params.optString("name")
-                    val r = tools.call(name, params.optJSONObject("arguments") ?: JSONObject())
+                    val args = params.optJSONObject("arguments") ?: JSONObject()
+                    val r = if (agent != null && permitted(agent, name) == false) tools.refuse(name, args, agent) else tools.call(name, args, agent)
                     if (r == null) error(id, INVALID_PARAMS, "道具がありません: $name") else result(id, r.toJson())
                 }
                 else -> error(id, METHOD_NOT_FOUND, "対応していません: $method")
@@ -82,6 +93,37 @@ class McpProtocol(private val tools: ToolHost, private val version: String, priv
             error(id, INTERNAL_ERROR, "うまくいきませんでした (${e.javaClass.simpleName})")
         }
     }
+
+    /** このエージェントに出す道具 (並びはそのまま。agent が無ければすべて) */
+    private fun listFor(agent: Agent?): JSONArray {
+        val all = tools.list()
+        if (agent == null || unrestricted(agent)) return all
+        val t = now(); val u = unlimited()
+        return JSONArray().apply {
+            for (i in 0 until all.length()) {
+                val o = all.optJSONObject(i) ?: continue
+                if (AgentPolicy.allows(agent, o.optString("name"), readOnly(o), t, u)) put(o)
+            }
+        }
+    }
+
+    /** この道具を使ってよいか (一覧に無い道具は null。道具の出し手が「ありません」と返す) */
+    private fun permitted(agent: Agent, name: String): Boolean? {
+        if (unrestricted(agent)) return true
+        val all = tools.list()
+        for (i in 0 until all.length()) {
+            val o = all.optJSONObject(i) ?: continue
+            if (o.optString("name") == name) return AgentPolicy.allows(agent, name, readOnly(o), now(), unlimited())
+        }
+        return null
+    }
+
+    /** すべての道具を使える (本体の ChatGPT のふだんの形・開発モード)。止めている・期限切れは McpServer が先に断っている */
+    private fun unrestricted(agent: Agent) = AgentPolicy.status(agent, now(), unlimited()) == AgentPolicy.Status.OK &&
+        (unlimited() || (!agent.readOnly && AgentPolicy.allGroups(agent)))
+
+    /** 道具の説明の annotations の readOnlyHint (読むだけの道具か) */
+    private fun readOnly(tool: JSONObject) = tool.optJSONObject("annotations")?.optBoolean("readOnlyHint", false) == true
 
     private fun initialize(p: JSONObject): JSONObject {
         val asked = p.optString("protocolVersion")

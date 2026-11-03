@@ -2,6 +2,8 @@ package com.rabi.envoymcp.call
 
 import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.mcp.ActivityLog
+import com.rabi.envoymcp.mcp.ActivitySentence
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -334,6 +336,7 @@ class RigelCaller(private val g: McpGraph) {
                 reason = ev.optString("reason"), lines = lines.map { it.copy(final = true) }))
         }
         _live.value = done
+        if (done?.dir == "in") rememberIncoming(done)
         cleanUp(ev)
         g.callScreen.hideAfter()
         RabiLog.i("rigelcall", "result ${ev.optString("outcome")} (${ev.optJSONArray("transcript")?.length() ?: 0} lines)")
@@ -343,6 +346,15 @@ class RigelCaller(private val g: McpGraph) {
         if (done != null && !(done.outcome == "failed" && done.lines.isEmpty() && done.answeredAt == 0L)) {
             g.scope.launch(Dispatchers.IO) { runCatching { g.callRecords.save(done, pcm, recRate) }.onFailure { RabiLog.w("rigelcall", "save failed: ${it.javaClass.simpleName}") } }
         } else pcm?.delete()
+    }
+
+    /** かかってきた電話に代わりに出たことを、したことの記録に残す (相手の呼び名と詐欺の疑いの強さだけ。用件・番号は残さない) */
+    private fun rememberIncoming(c: CallInfo) {
+        val answered = c.answeredAt > 0L || c.outcome != "failed"
+        runCatching {
+            g.activity.add(ActivityLog.RIGEL, "incoming_call", ActivitySentence.incoming(c.name, answered, ScamCheck.title(c.risk)),
+                ActivityLog.KIND_ACT, if (answered) ActivityLog.OK else ActivityLog.FAILED)
+        }
     }
 
     /** 新しい代行の通話を始めた (画面の中身を入れ替える) */

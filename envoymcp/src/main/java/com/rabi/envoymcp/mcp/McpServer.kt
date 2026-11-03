@@ -28,12 +28,19 @@ import java.security.MessageDigest
  * - 同じ端末の他のアプリ・ブラウザから勝手に使われないように、合言葉 (Authorization: Bearer か、URL の /mcp/<合言葉>) を確かめ、
  *   Host が 127.0.0.1 / localhost 以外のもの、ブラウザから来たもの (Origin あり) は断る
  * - 外から届くのは、tunnel-client (OpenAI の Secure MCP Tunnel) が 127.0.0.1 へ取り次いだものだけ (このサーバーは外に口を開けない)
+ * - 合言葉でエージェントを見分ける (本体の ChatGPT は token の合言葉、足したエージェントは自分の合言葉)。
+ *   止めている・期限が切れたエージェントは断り、使える道具はエージェントの権限で絞る (McpProtocol)
  */
 class McpServer(
     tools: ToolHost,
     private val port: () -> Int,
     private val token: () -> String,
     private val log: ToolLog,
+    /** エージェントの一覧 (省略すると本体の ChatGPT だけ。すべての道具を使える) */
+    private val agents: Agents = Agents(),
+    /** 開発モード: 止めていないエージェントには、権限の制限 (まとまり・読むだけ・期限) をかけない */
+    private val unlimited: () -> Boolean = { false },
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     sealed class State(val label: String) {
         data object Stopped : State("止まっています")
@@ -45,7 +52,7 @@ class McpServer(
     val state: StateFlow<State> = _state
     val running get() = _state.value is State.Running
 
-    private val protocol = McpProtocol(tools, BuildConfig.VERSION_NAME, INSTRUCTIONS)
+    private val protocol = McpProtocol(tools, BuildConfig.VERSION_NAME, INSTRUCTIONS, unlimited, now)
     private var socket: ServerSocket? = null
     private var scope: CoroutineScope? = null
 
@@ -110,11 +117,18 @@ class McpServer(
             else -> return HttpResponse.text(404, "not found")
         }
         val bearer = req.header("authorization")?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
-        val t = token()
-        if (listOfNotNull(pathToken, bearer).none { same(it, t) }) return refuse(403, if (pathToken == null && bearer == null) "合言葉がありません" else "合言葉が違います")
+        val given = listOfNotNull(pathToken, bearer)
+        if (given.isEmpty()) return refuse(403, "合言葉がありません")
+        val agent = find(given) ?: return refuse(403, "合言葉が違います")
+        when (AgentPolicy.status(agent, now(), unlimited())) {
+            AgentPolicy.Status.OFF -> return refuse(403, "エージェント「${agent.name}」は止めています")
+            AgentPolicy.Status.EXPIRED -> return refuse(403, "エージェント「${agent.name}」は期限が切れています")
+            AgentPolicy.Status.OK -> {}
+        }
         return when (req.method) {
             "POST" -> {
-                val out = protocol.handle(String(req.body, Charsets.UTF_8))
+                agents.touch(agent.id, now())
+                val out = protocol.handle(String(req.body, Charsets.UTF_8), agent)
                 if (out == null) HttpResponse(202, "Accepted") else HttpResponse(200, "OK", "application/json", out.toByteArray())
             }
             // サーバーからの SSE の流れは出さない (仕様で 405 を返してよい)
@@ -125,6 +139,12 @@ class McpServer(
     private fun refuse(code: Int, why: String): HttpResponse {
         log.add("接続を断った", false, why)
         return HttpResponse.text(code, "forbidden")
+    }
+
+    /** 渡された合言葉に合うエージェント (本体の ChatGPT は token の合言葉。空の合言葉には合わせない) */
+    private fun find(given: List<String>): Agent? {
+        val main = token()
+        return agents.list.value.firstOrNull { a -> (if (a.main) main else a.token).let { t -> t.isNotEmpty() && given.any { same(it, t) } } }
     }
 
     private fun same(a: String, b: String) = MessageDigest.isEqual(a.toByteArray(), b.toByteArray())

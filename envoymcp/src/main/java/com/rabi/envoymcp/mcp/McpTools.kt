@@ -386,24 +386,51 @@ class McpTools(private val g: McpGraph) : ToolHost {
 
     override fun list(): JSONArray = JSONArray().apply { tools.forEach { put(it.toJson()) } }
 
-    override suspend fun call(name: String, args: JSONObject): ToolResult? {
+    override suspend fun call(name: String, args: JSONObject, agent: Agent?): ToolResult? {
         val tool = byName[name] ?: return null
+        val (r, stopped) = runChecked(tool, args)
+        remember(tool, args, r, if (stopped) ActivityLog.STOPPED else ActivitySentence.outcome(r), agent)
+        return r
+    }
+
+    /** このエージェントに許されていない道具: 動かさずに断り、記録に残す */
+    override fun refuse(name: String, args: JSONObject, agent: Agent): ToolResult {
+        val r = AgentPolicy.refusal(agent)
+        g.log.add(name, false, "エージェント「${agent.name}」に許していない")
+        byName[name]?.let { remember(it, args, r, ActivityLog.REFUSED, agent, note = "（許していない道具）") }
+        return r
+    }
+
+    /** したことの記録に残す (文は道具ごとに ActivitySentence で作る。残せなくても、道具の結果はそのまま返す) */
+    private fun remember(tool: Tool, args: JSONObject, r: ToolResult, outcome: String, agent: Agent?, note: String = "") {
+        runCatching {
+            val sentence = ActivitySentence.build(tool.name, tool.title, args, r, outcome == ActivityLog.OK) { g.appLabel(it) } + note
+            // 表情は会話のたびに呼ばれるので、見ただけのものと同じく、最初は隠す
+            val quietKind = tool.readOnly || tool.name == "rigel_expression"
+            g.activity.add(agent?.name ?: Agent.MAIN_NAME, tool.name, sentence, if (quietKind) ActivityLog.KIND_READ else ActivityLog.KIND_ACT,
+                outcome, ActivitySentence.approved(r))
+        }.onFailure { RabiLog.w("mcp", "activity failed: ${it.javaClass.simpleName}") }
+    }
+
+    /** 確かめてから道具を動かす。返すのは結果と、本人が止めたか (止めた直後で受け付けなかった・動いている途中に止めた) */
+    private suspend fun runChecked(tool: Tool, args: JSONObject): Pair<ToolResult, Boolean> {
+        val name = tool.name
         if (g.stoppedByUser()) {
             g.log.add(name, false, "本人が止めた直後なので受け付けませんでした")
-            return ToolResult("利用者がスマホの画面でリゲルをタップして止めました。しばらく道具を受け付けません。利用者に確かめてから頼み直してください。", isError = true)
+            return ToolResult("利用者がスマホの画面でリゲルをタップして止めました。しばらく道具を受け付けません。利用者に確かめてから頼み直してください。", isError = true) to true
         }
         // 承認を待っている間は、ほかの操作をしない (承認画面を押されたり、画面を変えられたりしないように)
         if (tool.act && g.approvals.current.value != null) {
             g.log.add(name, false, "承認を待っている")
-            return failed("スマホで承認を待っています。承認が終わるまで、ほかの操作はしません。")
+            return failed("スマホで承認を待っています。承認が終わるまで、ほかの操作はしません。") to false
         }
         if (tool.act && !g.overlay.canShow()) {
             g.log.add(name, false, "他のアプリの上に表示の許可がない")
-            return failed("「他のアプリの上に表示」の許可が無いため、操作中に止められるリゲルを出せません。操作はしません (スマホの ENVOY MCP の設定で許可できます)。")
+            return failed("「他のアプリの上に表示」の許可が無いため、操作中に止められるリゲルを出せません。操作はしません (スマホの ENVOY MCP の設定で許可できます)。") to false
         }
-        if (tool.adb) needDevice()?.let { g.log.add(name, false, it); return failed(it) }
+        if (tool.adb) needDevice()?.let { g.log.add(name, false, it); return failed(it) to false }
         // ADB で操作するときは、しばらく使っていなかった接続を、画面を変える前に確かめ直す (切れていればつなぎ直す)
-        if (tool.act && g.usingAdb() && !g.adb.probeIfIdle()) { g.log.add(name, false, "接続を確かめられない"); return failed("端末の操作の接続を確かめられませんでした。少し待ってから頼み直してください。") }
+        if (tool.act && g.usingAdb() && !g.adb.probeIfIdle()) { g.log.add(name, false, "接続を確かめられない"); return failed("端末の操作の接続を確かめられませんでした。少し待ってから頼み直してください。") to false }
         // 指さし (point_at) は、ほかの道具が動き始めたら消す。画面を読む・待つだけの道具では消さない (教えている途中に、押せたかを確かめられるように)
         if (name !in KEEP_POINT) operateTools.stopPointing()
         RabiLog.i("mcp", "tool $name")
@@ -415,15 +442,16 @@ class McpTools(private val g: McpGraph) : ToolHost {
             job.await().also {
                 g.log.add(name, !it.isError, it.text.lineSequence().firstOrNull().orEmpty())
                 RabiLog.i("mcp", "tool $name -> ${it.structured?.optString("result")?.takeIf { r -> r.isNotEmpty() } ?: if (it.isError) "failed" else "ok"}")
-            }
+            } to false
         } catch (e: CancellationException) {
             currentCoroutineContext().ensureActive()   // 接続ごと切れたときは、そのまま終える
-            val why = if (e is TimeoutCancellationException) "時間内に終わりませんでした" else "利用者がリゲルをタップして止めました"
+            val timeout = e is TimeoutCancellationException
+            val why = if (timeout) "時間内に終わりませんでした" else "利用者がリゲルをタップして止めました"
             g.log.add(name, false, why)
-            unknown("$why。どこまで進んだかは確かめていません。read_screen で今の画面を確かめてください。")
+            unknown("$why。どこまで進んだかは確かめていません。read_screen で今の画面を確かめてください。") to !timeout
         } catch (e: Exception) {
             g.log.add(name, false, e.javaClass.simpleName)
-            failed("うまくいきませんでした (${e.javaClass.simpleName})。")
+            failed("うまくいきませんでした (${e.javaClass.simpleName})。") to false
         } finally {
             if (g.currentJob === job) g.currentJob = null
             if (!tool.quiet) g.endWork()

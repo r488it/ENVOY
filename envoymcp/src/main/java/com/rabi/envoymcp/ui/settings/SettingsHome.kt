@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Accessibility
+import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Cloud
@@ -74,6 +75,8 @@ internal object CardTitle {
     const val OVERLAY = "他のアプリの上に表示"
     const val PHONE = "電話の許可"
     const val ARM = "AgentARM (スマホを載せる腕)"
+    const val AGENTS = "エージェントの権限"
+    const val DEV_MODE = "開発モード"
 }
 
 /** 準備の状態の 1 行: アイコン・名前・今の様子・色 (stateColor)・押したときの行き先・直す所を開くボタン (無いこともある) */
@@ -97,7 +100,8 @@ internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (
     val phone = remember(tick) { a.hasPhonePerms() }
     val armOn = remember(tick) { g.settings.armEnabled }
     val armMissing = remember(tick) { a.armMissingPerms() }
-    val checks = listOf(
+    val dev = remember(tick) { g.settings.devNoAgentLimits }
+    val checks = listOfNotNull(
         Check(Icons.Rounded.Dns, "MCP サーバー",
             when { !serverOn -> "オフ"; server is McpServer.State.Running -> "動いています"; else -> server.label },
             if (!serverOn) null else server is McpServer.State.Running,
@@ -124,6 +128,9 @@ internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (
             when { !armOn -> null; armMissing.isNotEmpty() -> false; else -> arm.ready },
             { open(Section.ARM, CardTitle.ARM) },
             if (armOn && armMissing.isNotEmpty()) "許可する" else null) { a.requestArmPerms() },
+        // 開発モードは、オンの間だけ見てほしいものとして出す
+        if (dev) Check(Icons.Rounded.AdminPanelSettings, "開発モード", "オン: エージェントの権限の制限なし", false,
+            { open(Section.DEV, CardTitle.DEV_MODE) }, "オフにする") { a.setDevNoAgentLimits(false) } else null,
     )
     val ready = checks.count { it.ok == true }
     val needs = checks.count { it.ok == false }
@@ -245,6 +252,7 @@ private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<S
             else -> mode.label to true
         },
         Section.SAFETY to when {
+            s.devNoAgentLimits -> "開発モード: 権限の制限なし" to false
             s.approvalScreen && s.approvalBiometric -> "承認画面のあと、指紋など" to true
             s.approvalScreen -> "承認画面" to true
             s.approvalBiometric -> "指紋など" to true
@@ -274,6 +282,7 @@ private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<S
             !s.monitorStage -> "オフ" to null
             else -> ("オン・操作先は " + if (g.monitorStage.target != android.view.Display.DEFAULT_DISPLAY) "モニター" else "スマホ") to true
         },
-        Section.DEV to ("接続の情報・道具の記録 ${entries.size} 件" to null),
+        Section.DEV to (if (s.devNoAgentLimits) "開発モード オン・道具の記録 ${entries.size} 件" to false
+            else "接続の情報・道具の記録 ${entries.size} 件" to null),
     )
 }

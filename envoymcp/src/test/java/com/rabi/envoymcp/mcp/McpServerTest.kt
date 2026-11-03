@@ -16,7 +16,7 @@ class McpServerTest {
     private class FakeTools : ToolHost {
         val called = CompletableDeferred<String>()
         override fun list(): JSONArray = JSONArray().put(JSONObject().put("name", "get_state"))
-        override suspend fun call(name: String, args: JSONObject): ToolResult? {
+        override suspend fun call(name: String, args: JSONObject, agent: Agent?): ToolResult? {
             if (name != "get_state") return null
             called.complete(name)
             return ToolResult("ok", JSONObject().put("battery", 80))
@@ -163,6 +163,126 @@ class McpServerTest {
             server.stop()
         }
         assertEquals(McpServer.State.Stopped, server.state.value)
+    }
+
+    // ---------------------------------------------------------------- エージェントの権限
+
+    /** いくつかの道具 (読むだけ・操作・電話・どのまとまりにも入らないもの) と、呼ばれた道具の記録 */
+    private class ManyTools : ToolHost {
+        val called = ArrayList<String>()
+        val refused = ArrayList<String>()
+        val agents = ArrayList<String?>()
+        private fun tool(name: String, readOnly: Boolean) = JSONObject().put("name", name)
+            .put("annotations", JSONObject().put("readOnlyHint", readOnly))
+        override fun list(): JSONArray = JSONArray()
+            .put(tool("get_state", true)).put(tool("tap", false)).put(tool("call_phone", false)).put(tool("mystery", true))
+        override suspend fun call(name: String, args: JSONObject, agent: Agent?): ToolResult? {
+            if (name !in setOf("get_state", "tap", "call_phone", "mystery")) return null
+            called += name; agents += agent?.name
+            return ToolResult("ok")
+        }
+        override fun refuse(name: String, args: JSONObject, agent: Agent): ToolResult {
+            refused += name
+            return super.refuse(name, args, agent)
+        }
+    }
+
+    private var clock = 1_000_000L
+    private val many = ManyTools()
+    private val agents = Agents()
+    private var dev = false
+    private val guarded = McpServer(many, port = { 0 }, token = { TOKEN }, log = log, agents = agents, unlimited = { dev }, now = { clock })
+
+    private suspend fun names(server: McpServer, path: String): List<String> {
+        val list = JSONObject(String(server.respond(req(rpc("tools/list"), path = path)).body)).getJSONObject("result").getJSONArray("tools")
+        return (0 until list.length()).map { list.getJSONObject(it).getString("name") }
+    }
+
+    private suspend fun callResult(server: McpServer, path: String, name: String): JSONObject =
+        JSONObject(String(server.respond(req(rpc("tools/call", JSONObject().put("name", name).put("arguments", JSONObject())), path = path)).body)).getJSONObject("result")
+
+    /** 本体の合言葉は、エージェントの一覧があっても今までどおり: すべての道具が同じ並びで出て、呼べる */
+    @Test fun mainTokenKeepsEverything() = runTest {
+        assertEquals(listOf("get_state", "tap", "call_phone", "mystery"), names(guarded, "/mcp/$TOKEN"))
+        assertEquals(many.list().toString(), JSONObject(String(guarded.respond(req(rpc("tools/list"))).body)).getJSONObject("result").getJSONArray("tools").toString())
+        assertFalse(callResult(guarded, "/mcp/$TOKEN", "call_phone").getBoolean("isError"))
+        assertEquals(listOf("call_phone"), many.called)
+        assertEquals(listOf<String?>(Agent.MAIN_NAME), many.agents)
+        val r = guarded.respond(req(rpc("ping"), path = "/mcp", headers = mapOf("Host" to "127.0.0.1", "Authorization" to "Bearer $TOKEN")))
+        assertEquals(200, r.status)
+    }
+
+    /** 足したエージェント: 許したまとまり・読むだけの道具だけが一覧に出る (並びはそのまま) */
+    @Test fun addedAgentSeesOnlyAllowedTools() = runTest {
+        val a = agents.add(clock)
+        // 最初は読むだけ・すべてのまとまり
+        assertEquals(listOf("get_state", "mystery"), names(guarded, "/mcp/${a.token}"))
+        agents.update(a.copy(readOnly = false, groups = setOf("操作")))
+        assertEquals(listOf("tap"), names(guarded, "/mcp/${a.token}"))
+        // Bearer でも同じ
+        val r = guarded.respond(req(rpc("tools/list"), path = "/mcp", headers = mapOf("Host" to "127.0.0.1", "Authorization" to "Bearer ${a.token}")))
+        assertEquals(1, JSONObject(String(r.body)).getJSONObject("result").getJSONArray("tools").length())
+    }
+
+    /** 許していない道具を呼ぶと、動かさずに道具の失敗 (isError) で断る */
+    @Test fun disallowedToolIsRefusedAndNotRun() = runTest {
+        val a = agents.add(clock)   // 読むだけ
+        val res = callResult(guarded, "/mcp/${a.token}", "tap")
+        assertTrue(res.getBoolean("isError"))
+        assertTrue(res.getJSONArray("content").getJSONObject(0).getString("text").contains("許されていません"))
+        assertTrue(res.getJSONArray("content").getJSONObject(0).getString("text").contains(Agents.NEW_NAME))
+        assertEquals(listOf("tap"), many.refused)
+        assertTrue(many.called.isEmpty())
+        // 許している道具は動く (呼んだエージェントの名前つき)
+        assertFalse(callResult(guarded, "/mcp/${a.token}", "get_state").getBoolean("isError"))
+        assertEquals(listOf("get_state"), many.called)
+        assertEquals(listOf<String?>(Agents.NEW_NAME), many.agents)
+        // 一覧に無い道具は、今までどおり「ありません」
+        val unknown = JSONObject(String(guarded.respond(req(rpc("tools/call", JSONObject().put("name", "nope")), path = "/mcp/${a.token}")).body))
+        assertEquals(McpProtocol.INVALID_PARAMS, unknown.getJSONObject("error").getInt("code"))
+    }
+
+    /** 知らない合言葉・期限切れ・止めているエージェントは 403 (記録に合言葉は残さない) */
+    @Test fun unknownExpiredOrOffAgentIsRefused() = runTest {
+        val a = agents.add(clock)
+        assertEquals(403, guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}x")).status)
+        clock = a.expiresAt
+        assertEquals(403, guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}")).status)
+        assertTrue(log.entries.value.first().detail.contains("期限"))
+        agents.update(agents.get(a.id)!!.copy(expiresAt = 0L, enabled = false))
+        assertEquals(403, guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}")).status)
+        assertTrue(log.entries.value.first().detail.contains("止めて"))
+        agents.update(agents.get(a.id)!!.copy(enabled = true))
+        assertEquals(200, guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}")).status)
+        assertTrue(log.entries.value.none { it.detail.contains(a.token) || it.detail.contains(TOKEN) })
+        assertTrue(many.called.isEmpty())
+    }
+
+    /** 開発モード: 止めていないエージェントは、期限・読むだけ・まとまりに関係なくすべて使える。止めているものと知らない合言葉は断る */
+    @Test fun devModeLiftsLimitsButNotOffOrUnknown() = runTest {
+        val a = agents.add(clock)
+        agents.update(a.copy(groups = setOf("写真")))
+        clock = a.expiresAt + 1
+        dev = true
+        assertEquals(listOf("get_state", "tap", "call_phone", "mystery"), names(guarded, "/mcp/${a.token}"))
+        assertFalse(callResult(guarded, "/mcp/${a.token}", "tap").getBoolean("isError"))
+        assertEquals(403, guarded.respond(req(rpc("ping"), path = "/mcp/wrong")).status)
+        agents.update(agents.get(a.id)!!.copy(enabled = false))
+        assertEquals(403, guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}")).status)
+    }
+
+    /** 使った時刻を残す (間をあけて) */
+    @Test fun lastUsedIsTouched() = runTest {
+        val a = agents.add(clock)
+        guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}"))
+        assertEquals(clock, agents.get(a.id)!!.lastUsedAt)
+        val first = clock
+        clock += 1_000
+        guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}"))
+        assertEquals(first, agents.get(a.id)!!.lastUsedAt)
+        clock += 120_000
+        guarded.respond(req(rpc("ping"), path = "/mcp/${a.token}"))
+        assertEquals(clock, agents.get(a.id)!!.lastUsedAt)
     }
 
     companion object {
