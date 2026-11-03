@@ -1,6 +1,6 @@
 package com.rabi.envoymcp.mcp
 
-import com.rabi.launcher.observe.Bounds
+import com.rabi.envoymcp.observe.Bounds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

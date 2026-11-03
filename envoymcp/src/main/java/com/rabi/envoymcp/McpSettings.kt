@@ -1,6 +1,8 @@
 package com.rabi.envoymcp
 
 import android.content.Context
+import androidx.core.content.edit
+import com.rabi.envoymcp.voice.VoicePrimer
 import java.security.SecureRandom
 
 /** ENVOY MCP の設定 (この端末の中だけ) */
@@ -10,12 +12,12 @@ class McpSettings(context: Context) {
     /** MCP サーバーを動かすか。本人が設定の画面でオンにしたときだけ動く (最初はオフ) */
     var serverEnabled: Boolean
         get() = p.getBoolean("server_enabled", false)
-        set(v) = p.edit().putBoolean("server_enabled", v).apply()
+        set(v) = p.edit { putBoolean("server_enabled", v) }
 
     /** 待ち受けるポート (127.0.0.1 だけ) */
     var port: Int
         get() = p.getInt("port", DEFAULT_PORT)
-        set(v) = p.edit().putInt("port", v).apply()
+        set(v) = p.edit { putInt("port", v) }
 
     /** 合言葉 (Authorization: Bearer)。同じ端末の他のアプリから勝手に使われないように */
     val token: String
@@ -25,19 +27,19 @@ class McpSettings(context: Context) {
         val r = SecureRandom()
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
         val t = (1..TOKEN_LENGTH).map { chars[r.nextInt(chars.length)] }.joinToString("")
-        p.edit().putString("token", t).apply()
+        p.edit { putString("token", t) }
         return t
     }
 
     /** スマホの中で tunnel-client を動かすか (本人が設定でオンにしたときだけ。MCP サーバーが動いているときだけ動く) */
     var tunnelEnabled: Boolean
         get() = p.getBoolean("tunnel_enabled", false)
-        set(v) = p.edit().putBoolean("tunnel_enabled", v).apply()
+        set(v) = p.edit { putBoolean("tunnel_enabled", v) }
 
     /** つなぐトンネル (Platform のトンネル設定の tunnel_...)。秘密ではない。実行用キーは SecureStore に別に置く */
     var tunnelId: String
         get() = p.getString("tunnel_id", "") ?: ""
-        set(v) = p.edit().putString("tunnel_id", v).apply()
+        set(v) = p.edit { putString("tunnel_id", v) }
 
     /**
      * 確定 (送信・投稿など) の前に、指紋などの本人確認をするか (最初はオン)。
@@ -45,7 +47,7 @@ class McpSettings(context: Context) {
      */
     var approvalBiometric: Boolean
         get() = p.getBoolean("approval_biometric", true)
-        set(v) = p.edit().putBoolean("approval_biometric", v).apply()
+        set(v) = p.edit { putBoolean("approval_biometric", v) }
 
     /**
      * 確定の前に承認画面 (内容を見て「確認して実行」) を出すか (最初はオフ: 指紋などだけで承認する)。
@@ -54,22 +56,22 @@ class McpSettings(context: Context) {
      */
     var approvalScreen: Boolean
         get() = p.getBoolean("approval_screen", false)
-        set(v) = p.edit().putBoolean("approval_screen", v).apply()
+        set(v) = p.edit { putBoolean("approval_screen", v) }
 
     /** 端末の操作の方式 (最初は ADB のみ) */
     var controlMode: ControlMode
         get() = ControlMode.entries.firstOrNull { it.id == p.getString("control_mode", null) } ?: ControlMode.ADB
-        set(v) = p.edit().putString("control_mode", v.id).apply()
+        set(v) = p.edit { putString("control_mode", v.id) }
 
     /** 画面の画像を ChatGPT に渡してよいか (最初はオン。設定で切れる) */
     var allowScreenshots: Boolean
         get() = p.getBoolean("allow_screenshots", true)
-        set(v) = p.edit().putBoolean("allow_screenshots", v).apply()
+        set(v) = p.edit { putBoolean("allow_screenshots", v) }
 
     /** ChatGPT の音声モードの真ん中に、リゲルを重ねる */
     var voiceStage: Boolean
         get() = p.getBoolean("voice_stage", true)
-        set(v) = p.edit().putBoolean("voice_stage", v).apply()
+        set(v) = p.edit { putBoolean("voice_stage", v) }
 
     /**
      * リゲルのタップで開いた音声モードに、最初の一言 (この会話では ENVOY MCP を使う、と伝える文) を文字で送る
@@ -77,12 +79,12 @@ class McpSettings(context: Context) {
      */
     var voicePrimer: Boolean
         get() = p.getBoolean("voice_primer", true)
-        set(v) = p.edit().putBoolean("voice_primer", v).apply()
+        set(v) = p.edit { putBoolean("voice_primer", v) }
 
     /** 最初の一言の文 (空にすると送らない) */
     var voicePrimerText: String
         get() = p.getString("voice_primer_text", null) ?: VoicePrimer.DEFAULT_TEXT
-        set(v) = p.edit().putString("voice_primer_text", v).apply()
+        set(v) = p.edit { putString("voice_primer_text", v) }
 
     /**
      * モニター (PC モード) につないだら、モニターに全画面のリゲルを出し、ChatGPT の道具の操作先をモニターにする
@@ -90,23 +92,23 @@ class McpSettings(context: Context) {
      */
     var monitorStage: Boolean
         get() = p.getBoolean("monitor_stage", true)
-        set(v) = p.edit().putBoolean("monitor_stage", v).apply()
+        set(v) = p.edit { putBoolean("monitor_stage", v) }
 
     /** 重ねたリゲルを ChatGPT の声に合わせて動かす (試験。端末の出力の波形を読むため、マイクの許可が要る。最初はオフ) */
     var voiceStageLevel: Boolean
         get() = p.getBoolean("voice_stage_level", false)
-        set(v) = p.edit().putBoolean("voice_stage_level", v).apply()
+        set(v) = p.edit { putBoolean("voice_stage_level", v) }
 
     /** 操作中、他のアプリの上にリゲルを出す */
     var bubbleEnabled: Boolean
         get() = p.getBoolean("bubble", true)
-        set(v) = p.edit().putBoolean("bubble", v).apply()
+        set(v) = p.edit { putBoolean("bubble", v) }
     var bubbleX: Float
         get() = p.getFloat("bubble_x", -1f)
-        set(v) = p.edit().putFloat("bubble_x", v).apply()
+        set(v) = p.edit { putFloat("bubble_x", v) }
     var bubbleY: Float
         get() = p.getFloat("bubble_y", -1f)
-        set(v) = p.edit().putFloat("bubble_y", v).apply()
+        set(v) = p.edit { putFloat("bubble_y", v) }
 
     /**
      * AgentARM (スマホを載せる腕) を BLE でつないで動かすか (本人が設定でオンにしたときだけ。最初はオフ)。
@@ -114,7 +116,7 @@ class McpSettings(context: Context) {
      */
     var armEnabled: Boolean
         get() = p.getBoolean("arm_enabled", false)
-        set(v) = p.edit().putBoolean("arm_enabled", v).apply()
+        set(v) = p.edit { putBoolean("arm_enabled", v) }
 
     /**
      * 音楽が流れたら、AgentARM が自動で踊る (本人が設定でオンにしたときだけ。最初はオフ)。
@@ -122,17 +124,17 @@ class McpSettings(context: Context) {
      */
     var armAutoDance: Boolean
         get() = p.getBoolean("arm_auto_dance", false)
-        set(v) = p.edit().putBoolean("arm_auto_dance", v).apply()
+        set(v) = p.edit { putBoolean("arm_auto_dance", v) }
 
     /** 音楽が流れたら、リゲルの画面 (まわりにカラフルなスペクトラム) を出す (最初はオン) */
     var musicStage: Boolean
         get() = p.getBoolean("music_stage", true)
-        set(v) = p.edit().putBoolean("music_stage", v).apply()
+        set(v) = p.edit { putBoolean("music_stage", v) }
 
     /** 音楽の画面で、拍に合わせて光らせる (オフでも、スペクトラムとヘッドホンは出る。光に敏感な人のため。最初はオン) */
     var musicFlash: Boolean
         get() = p.getBoolean("music_flash", true)
-        set(v) = p.edit().putBoolean("music_flash", v).apply()
+        set(v) = p.edit { putBoolean("music_flash", v) }
 
     /**
      * 音楽の画面に歌詞を出す (LRCLIB から、曲名・アーティスト・長さで時刻付きの歌詞を取る。外のサービスに送るのは曲名などだけ。
@@ -140,7 +142,7 @@ class McpSettings(context: Context) {
      */
     var musicLyrics: Boolean
         get() = p.getBoolean("music_lyrics", true)
-        set(v) = p.edit().putBoolean("music_lyrics", v).apply()
+        set(v) = p.edit { putBoolean("music_lyrics", v) }
 
     /**
      * 呼び名 (「ねえ、リゲル」) で起きたら、ChatGPT の音声モードが開くまでの間、リゲルがランダムな表情を見せてから
@@ -148,7 +150,7 @@ class McpSettings(context: Context) {
      */
     var wakeGreet: Boolean
         get() = p.getBoolean("wake_greet", true)
-        set(v) = p.edit().putBoolean("wake_greet", v).apply()
+        set(v) = p.edit { putBoolean("wake_greet", v) }
 
     /**
      * 呼び名のしきい値 (UNO Q が「本人のリゲル」とみなす声の近さ。低いほど反応しやすく、ほかの人・似た言葉にも反応しやすい)。
@@ -156,12 +158,12 @@ class McpSettings(context: Context) {
      */
     var wakeThreshold: Float
         get() = p.getFloat("wake_threshold", 0.58f)
-        set(v) = p.edit().putFloat("wake_threshold", v).apply()
+        set(v) = p.edit { putFloat("wake_threshold", v) }
 
     /** リゲルが代わりに電話するとき、「〇〇さんの代わりに」と名乗る利用者の呼び名 (ChatGPT が caller を渡さないとき) */
     var rigelCallerName: String
         get() = p.getString("rigel_caller_name", "") ?: ""
-        set(v) = p.edit().putString("rigel_caller_name", v.trim()).apply()
+        set(v) = p.edit { putString("rigel_caller_name", v.trim()) }
 
     /**
      * かかってきた電話にリゲルが代わりに出るか、本人に選ばせる方法。
@@ -169,12 +171,12 @@ class McpSettings(context: Context) {
      */
     var rigelIncoming: String
         get() = p.getString("rigel_incoming", "buttons") ?: "buttons"
-        set(v) = p.edit().putString("rigel_incoming", v).apply()
+        set(v) = p.edit { putString("rigel_incoming", v) }
 
     /** 設定の画面で開いているカードの見出し (項目が多いので、カードを折りたたむ。最初は全部閉じる) */
     var settingsOpen: Set<String>
         get() = p.getStringSet("settings_open", emptySet())?.toSet() ?: emptySet()
-        set(v) = p.edit().putStringSet("settings_open", v).apply()
+        set(v) = p.edit { putStringSet("settings_open", v) }
 
     /**
      * かかってきた電話に、本人が出ず選びもしないまま rigelAutoAnswerSec 秒たったら、リゲルが代わりに出るか
@@ -182,12 +184,12 @@ class McpSettings(context: Context) {
      */
     var rigelAutoAnswer: Boolean
         get() = p.getBoolean("rigel_auto_answer", false)
-        set(v) = p.edit().putBoolean("rigel_auto_answer", v).apply()
+        set(v) = p.edit { putBoolean("rigel_auto_answer", v) }
 
     /** 着信から自動で出るまでの秒数 (留守番電話につながるより短く) */
     var rigelAutoAnswerSec: Int
         get() = p.getInt("rigel_auto_answer_sec", 10)
-        set(v) = p.edit().putInt("rigel_auto_answer_sec", v).apply()
+        set(v) = p.edit { putInt("rigel_auto_answer_sec", v) }
 
     /**
      * リゲルが代わりに出た電話のあと、ChatGPT の音声モードを開いて用件を伝えさせるか (最初はオフ。
@@ -195,7 +197,7 @@ class McpSettings(context: Context) {
      */
     var rigelIncomingReport: Boolean
         get() = p.getBoolean("rigel_incoming_report", false)
-        set(v) = p.edit().putBoolean("rigel_incoming_report", v).apply()
+        set(v) = p.edit { putBoolean("rigel_incoming_report", v) }
 
     /**
      * リゲルが代わりに電話している間、電話のアプリの画面の番号をモザイクで隠すか (NumberMask)。代行中はリゲルの通話の画面 (CallScreen) で
@@ -203,22 +205,22 @@ class McpSettings(context: Context) {
      */
     var numberMask: Boolean
         get() = p.getBoolean("number_mask", false)
-        set(v) = p.edit().putBoolean("number_mask", v).apply()
+        set(v) = p.edit { putBoolean("number_mask", v) }
 
     /** リゲルが代わりにかけた・出た電話を録音して、通話の記録に残すか (相手には伝えない。最初はオン) */
     var rigelRecord: Boolean
         get() = p.getBoolean("rigel_record", true)
-        set(v) = p.edit().putBoolean("rigel_record", v).apply()
+        set(v) = p.edit { putBoolean("rigel_record", v) }
 
     /** 前につないだ AgentARM の Bluetooth のアドレス (次は探さずにつなぐ。秘密ではない) */
     var armAddress: String
         get() = p.getString("arm_address", "") ?: ""
-        set(v) = p.edit().putString("arm_address", v).apply()
+        set(v) = p.edit { putString("arm_address", v) }
 
     /** ホーム画面のリゲルを 3D で描く */
     var avatar3d: Boolean
         get() = p.getBoolean("avatar_3d", true)
-        set(v) = p.edit().putBoolean("avatar_3d", v).apply()
+        set(v) = p.edit { putBoolean("avatar_3d", v) }
 
     /** アバターの見た目 */
     val avatar: String get() = "orb"

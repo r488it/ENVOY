@@ -1,6 +1,6 @@
 package com.rabi.envoymcp.mcp
 
-import com.rabi.launcher.core.Text
+import com.rabi.envoymcp.core.Text
 import java.text.Normalizer
 
 /**

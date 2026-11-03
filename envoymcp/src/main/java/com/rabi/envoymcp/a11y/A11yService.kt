@@ -8,7 +8,8 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import com.rabi.launcher.core.RabiLog
+import androidx.core.util.size
+import com.rabi.envoymcp.core.RabiLog
 
 /**
  * ENVOY MCP のユーザー補助のサービス (端末の操作の方式が「ユーザー補助」を含むときに使う)。
@@ -162,7 +163,7 @@ class A11yService : AccessibilityService() {
     /** すべての画面の窓 (アプリの窓を名前で探すとき。モニターにつながっていても、スマホの ChatGPT の窓が見つかるように) */
     private fun allWindows(): List<AccessibilityWindowInfo> = runCatching {
         val all = windowsOnAllDisplays
-        (0 until all.size()).flatMap { all.valueAt(it).orEmpty() }
+        (0 until all.size).flatMap { all.valueAt(it).orEmpty() }
     }.getOrNull()?.ifEmpty { null } ?: runCatching { windows }.getOrDefault(emptyList())
 
     /** その画面 (displayId) の窓。外部ディスプレイのデスクトップも読める (Android 11 から) */

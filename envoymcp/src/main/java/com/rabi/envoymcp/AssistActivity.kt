@@ -2,7 +2,7 @@ package com.rabi.envoymcp
 
 import android.app.Activity
 import android.os.Bundle
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.core.RabiLog
 
 /**
  * デジタル アシスタントの受け口。

@@ -87,7 +87,6 @@
             android:name="com.rabi.envoymcp.AssistActivity"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:label="@string/app_name"
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay">
@@ -98,14 +97,14 @@
         </activity>
 
         <activity
-            android:name="com.rabi.envoymcp.SettingsActivity"
+            android:name="com.rabi.envoymcp.ui.settings.SettingsActivity"
             android:exported="false"
             android:label="@string/settings_title"
             android:taskAffinity="com.rabi.envoymcp.settings" />
 
         <!-- 通話の記録 (リゲルが代わりにかけた・出た電話のやり取りと録音) -->
         <activity
-            android:name="com.rabi.envoymcp.CallLogActivity"
+            android:name="com.rabi.envoymcp.ui.calllog.CallLogActivity"
             android:exported="false"
             android:label="通話の記録"
             android:taskAffinity="com.rabi.envoymcp.settings"
@@ -113,7 +112,7 @@
 
         <!-- 音楽が流れている間のリゲルの画面 (画面いっぱい。音楽が止まると閉じる) -->
         <activity
-            android:name="com.rabi.envoymcp.MusicStageActivity"
+            android:name="com.rabi.envoymcp.music.MusicStageActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTask"
@@ -122,7 +121,7 @@
 
         <!-- モニター (PC モード) に開くリゲルの窓 (試験。デスクトップのアプリの窓として) -->
         <activity
-            android:name="com.rabi.envoymcp.MonitorActivity"
+            android:name="com.rabi.envoymcp.monitor.MonitorActivity"
             android:exported="false"
             android:label="リゲル"
             android:resizeableActivity="true"
@@ -131,7 +130,7 @@
 
         <!-- 撮りながら顔を追う間の画面 (前面カメラの映像と、止めるボタン。録画が終わると閉じる) -->
         <activity
-            android:name="com.rabi.envoymcp.RecordActivity"
+            android:name="com.rabi.envoymcp.arm.RecordActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTask"
@@ -139,7 +138,7 @@
             android:theme="@style/Theme.Rabi" />
 
         <activity
-            android:name="com.rabi.launcher.ui.ApprovalActivity"
+            android:name="com.rabi.envoymcp.ui.approval.ApprovalActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"
@@ -148,7 +147,7 @@
 
         <!-- 指紋などだけで承認する (本人確認がオンのとき。透明で、Android の本人確認だけを出す) -->
         <activity
-            android:name="com.rabi.launcher.ui.QuickApprovalActivity"
+            android:name="com.rabi.envoymcp.ui.approval.QuickApprovalActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"

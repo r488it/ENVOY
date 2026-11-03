@@ -1,6 +1,6 @@
 package com.rabi.envoymcp.mcp
 
-import com.rabi.launcher.core.Text
+import com.rabi.envoymcp.core.Text
 
 /**
  * 入力欄が検索欄か (YouTube などの検索欄は、入れただけでは検索しない)。

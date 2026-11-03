@@ -1,7 +1,7 @@
 package com.rabi.envoymcp.mcp
 
 import com.rabi.envoymcp.BuildConfig
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.core.RabiLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

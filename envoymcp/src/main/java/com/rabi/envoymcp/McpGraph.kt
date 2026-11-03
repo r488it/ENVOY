@@ -5,36 +5,58 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
-import com.rabi.envoymcp.arm.ArmController
-import com.rabi.envoymcp.mcp.McpServer
-import com.rabi.envoymcp.mcp.McpTools
-import com.rabi.envoymcp.mcp.ToolLog
-import com.rabi.envoymcp.mcp.ScreenVision
-import com.rabi.envoymcp.mcp.TunnelClient
-import com.rabi.launcher.adb.AdbConnector
-import com.rabi.launcher.conversation.EngineState
-import com.rabi.launcher.conversation.Mood
-import com.rabi.launcher.core.RabiLog
+import androidx.core.net.toUri
 import com.rabi.envoymcp.a11y.A11yDeviceController
 import com.rabi.envoymcp.a11y.A11yService
-import com.rabi.launcher.device.AdbDeviceController
-import com.rabi.launcher.device.AppShortcuts
-import com.rabi.launcher.llm.ChatGptAuth
-import com.rabi.launcher.llm.SecureStore
-import com.rabi.launcher.parts.AndroidPartStore
-import com.rabi.launcher.parts.PartRepository
-import com.rabi.launcher.parts.PartRunner
-import com.rabi.launcher.safety.ApprovalManager
-import com.rabi.launcher.safety.CommitFlow
-import com.rabi.launcher.safety.DuplicateGuard
-import com.rabi.launcher.ui.ApprovalCoordinator
-import com.rabi.launcher.ui.AvatarStyle
-import com.rabi.launcher.ui.OperationOverlay
+import com.rabi.envoymcp.arm.ArmController
+import com.rabi.envoymcp.arm.RecordActivity
+import com.rabi.envoymcp.auth.ChatGptAuth
+import com.rabi.envoymcp.call.CallRecords
+import com.rabi.envoymcp.call.CallScreen
+import com.rabi.envoymcp.call.IncomingCall
+import com.rabi.envoymcp.call.LineCaller
+import com.rabi.envoymcp.call.NumberMask
+import com.rabi.envoymcp.call.RigelCaller
+import com.rabi.envoymcp.core.EngineState
+import com.rabi.envoymcp.core.Expression
+import com.rabi.envoymcp.core.Mood
+import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.core.SecureStore
+import com.rabi.envoymcp.device.ActionResult
+import com.rabi.envoymcp.device.AdbDeviceController
+import com.rabi.envoymcp.device.AppShortcuts
+import com.rabi.envoymcp.device.SwitchingDeviceController
+import com.rabi.envoymcp.device.adb.AdbConnector
+import com.rabi.envoymcp.mcp.McpServer
+import com.rabi.envoymcp.mcp.McpTools
+import com.rabi.envoymcp.mcp.ScreenVision
+import com.rabi.envoymcp.mcp.ToolLog
+import com.rabi.envoymcp.mcp.TunnelClient
+import com.rabi.envoymcp.media.PhotoSearch
+import com.rabi.envoymcp.media.PhotoStrip
+import com.rabi.envoymcp.monitor.MonitorStage
+import com.rabi.envoymcp.music.LyricsRepo
+import com.rabi.envoymcp.music.MusicListener
+import com.rabi.envoymcp.music.MusicStage
+import com.rabi.envoymcp.music.MusicWatch
+import com.rabi.envoymcp.music.NowPlaying
+import com.rabi.envoymcp.parts.AndroidPartStore
+import com.rabi.envoymcp.parts.PartRepository
+import com.rabi.envoymcp.parts.PartRunner
+import com.rabi.envoymcp.safety.ApprovalManager
+import com.rabi.envoymcp.safety.CommitFlow
+import com.rabi.envoymcp.safety.DuplicateGuard
+import com.rabi.envoymcp.ui.approval.ApprovalCoordinator
+import com.rabi.envoymcp.ui.approval.QuickApprovalActivity
+import com.rabi.envoymcp.ui.avatar.AvatarStyle
+import com.rabi.envoymcp.ui.overlay.OperationOverlay
+import com.rabi.envoymcp.voice.StageContent
+import com.rabi.envoymcp.voice.VoicePrimer
+import com.rabi.envoymcp.voice.VoiceStage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,7 +101,7 @@ class McpGraph(val context: Context) {
     /** 全アプリのショートカット (起動時に読み、インストールや変更があれば自動で読み直す。ホームアプリのときだけ読める) */
     val shortcuts = AppShortcuts(context).also { it.start() }
     private val hideOverlay: suspend (suspend () -> ByteArray?) -> ByteArray? = { block -> if (::overlay.isInitialized) overlay.hideWhile { block() } else block() }
-    private val passThrough: suspend (suspend () -> com.rabi.launcher.device.ActionResult) -> com.rabi.launcher.device.ActionResult =
+    private val passThrough: suspend (suspend () -> ActionResult) -> ActionResult =
         { block -> markInjecting { if (::overlay.isInitialized) overlay.passThroughWhile { block() } else block() } }
     /** ADB 版の端末操作 (ワイヤレスデバッグ) */
     val adbDevice = AdbDeviceController(context, adb, hideOverlay, passThroughWhile = passThrough, appShortcuts = shortcuts)
@@ -134,7 +156,7 @@ class McpGraph(val context: Context) {
     /** 指紋など (または端末の PIN) で本人確認ができる (できなければ、承認画面で「確認して実行」に戻す) */
     private fun canQuickApprove(): Boolean = runCatching {
         context.getSystemService(android.hardware.biometrics.BiometricManager::class.java)
-            .canAuthenticate(com.rabi.launcher.ui.QuickApprovalActivity.AUTH) == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS
+            .canAuthenticate(QuickApprovalActivity.AUTH) == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS
     }.getOrDefault(false)
 
     /** 録画の画面 (RecordActivity) が出ている (その間は、音声モードの全画面のリゲルを出さない) */
@@ -145,7 +167,7 @@ class McpGraph(val context: Context) {
     /** 音楽が流れているか (音楽の画面と、AgentARM の「音楽が流れたら踊る」で共有) */
     val musicWatch = MusicWatch(context)
     /** 端末で鳴っている音から拍とスペクトラムを取る (踊り・音楽の画面・試しで共有。だれかが聞いている間だけ動く) */
-    val music = com.rabi.envoymcp.arm.MusicListener(context, scope)
+    val music = MusicListener(context, scope)
     /** AgentARM (スマホを載せる腕。本人が設定でオンにしたときだけ。MCP サーバーが動いている間 McpService が動かす) */
     /** 再生中の曲 (通知へのアクセスが許可されていれば) */
     val nowPlaying = NowPlaying(context)
@@ -153,20 +175,20 @@ class McpGraph(val context: Context) {
     val lyrics = LyricsRepo(context, scope)
     val arm = ArmController(context, scope, settings, music, musicWatch, nowPlaying)
     /** リゲルが代わりに電話して用件を伝える (UNO Q の電話の代役 callservice.py に頼む) */
-    val rigelCaller = com.rabi.envoymcp.arm.RigelCaller(this)
+    val rigelCaller = RigelCaller(this)
     /** リゲルが代わりに電話している間の画面 (やり取りを文字で) と、その記録 (あとから見る・録音) */
-    val callScreen = com.rabi.envoymcp.arm.CallScreen(this)
-    val callRecords = com.rabi.envoymcp.arm.CallRecords(context)
+    val callScreen = CallScreen(this)
+    val callRecords = CallRecords(context)
     /** 写真を言葉で探す (EmbeddingGemma 2。端末の中) */
-    val photos = com.rabi.envoymcp.media.PhotoSearch(this)
+    val photos = PhotoSearch(this)
     /** 見つけた写真を、画面の下に番号付きで並べる (本人が目で確かめる) */
-    val photoStrip = com.rabi.envoymcp.media.PhotoStrip(this)
+    val photoStrip = PhotoStrip(this)
     /** リゲルが代わりに電話している間、電話のアプリの画面の電話番号を隠す */
-    val numberMask = com.rabi.envoymcp.arm.NumberMask(this)
+    val numberMask = NumberMask(this)
     /** かかってきた電話にリゲルが代わりに出る (代わりに出るかを、画面のボタンか ChatGPT の音声モードで本人に選ばせる) */
-    val incomingCall = com.rabi.envoymcp.arm.IncomingCall(this)
+    val incomingCall = IncomingCall(this)
     /** LINE の音声通話を画面の操作でかける・音を「リゲル」に回す・切る (リゲルが代わりに電話するとき) */
-    val lineCaller = com.rabi.envoymcp.arm.LineCaller(this)
+    val lineCaller = LineCaller(this)
     /** 音楽が流れたら出すリゲルの画面 */
     val musicStage = MusicStage(this)
     /** MCP サーバーのサービスが動いているか (McpService が入れる。音楽の見張りはこの間だけ) */
@@ -207,7 +229,7 @@ class McpGraph(val context: Context) {
     }
 
     /** リゲルに感情の表情を一度だけ見せる (うれしい・驚きなど。決まった長さで元に戻る)。AgentARM につないでいれば、腕も同じような動きをする */
-    fun express(e: com.rabi.launcher.conversation.Expression) {
+    fun express(e: Expression) {
         RabiLog.i("graph", "express ${e.id}")
         _state.update { it.copy(expression = e, expressionSeq = it.expressionSeq + 1, expressionHoldMs = 0L) }
         arm.express(e)
@@ -260,7 +282,7 @@ class McpGraph(val context: Context) {
         val onPhone = android.app.ActivityOptions.makeBasic().setLaunchDisplayId(android.view.Display.DEFAULT_DISPLAY).toBundle()
         if (voice != null && runCatching { la.startShortcut(CHATGPT, voice.id, null, onPhone, Process.myUserHandle()) }.isSuccess) return true
         if (runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/voice")).setPackage(CHATGPT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), onPhone)
+                context.startActivity(Intent(Intent.ACTION_VIEW, "https://chatgpt.com/voice".toUri()).setPackage(CHATGPT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), onPhone)
             }.isSuccess) return true
         // 音声モードを直接開けなければ、ChatGPT のアプリを開くだけ (音声は本人が始める)
         val launch = context.packageManager.getLaunchIntentForPackage(CHATGPT) ?: return false
@@ -400,7 +422,7 @@ class McpGraph(val context: Context) {
      * 画面のリゲルに表情を出す。音声モードの全画面のリゲル (VoiceStage) は開くたびに作り直され、開いた時点の表情は見せない
      * (前の表情をもう一度見せないため) ので、全画面のリゲルが出てから出す
      */
-    private suspend fun showWakeExpression(e: com.rabi.launcher.conversation.Expression) {
+    private suspend fun showWakeExpression(e: Expression) {
         val t0 = System.currentTimeMillis()
         while (!voiceStage.isShowing && System.currentTimeMillis() - t0 < WAKE_STAGE_WAIT_MS) delay(50)
         if (voiceStage.isShowing) delay(WAKE_STAGE_SETTLE_MS)
@@ -569,9 +591,9 @@ class McpGraph(val context: Context) {
         private const val GOODBYE_FIXED_MS = 3_500L
         /** 呼び名で起きたときに見せる表情 (この中からランダム) */
         private val WAKE_EXPRESSIONS = listOf(
-            com.rabi.launcher.conversation.Expression.HAPPY, com.rabi.launcher.conversation.Expression.LAUGH,
-            com.rabi.launcher.conversation.Expression.SURPRISED, com.rabi.launcher.conversation.Expression.SHY,
-            com.rabi.launcher.conversation.Expression.WINK)
+            Expression.HAPPY, Expression.LAUGH,
+            Expression.SURPRISED, Expression.SHY,
+            Expression.WINK)
         /** ChatGPT の音声モードの × (会話を終える) の説明 (日本語の表示のとき。音声モードの画面にしか無いので、VoicePrimer は音声モードの見分けにも使う) */
         const val CHATGPT_END_DESC = "終了"
         /** リゲルの電話の前に ChatGPT の音声モードを終えて、通話モードが戻るのを待つ最長 */

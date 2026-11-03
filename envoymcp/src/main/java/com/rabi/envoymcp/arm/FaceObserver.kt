@@ -7,10 +7,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
-import android.net.Uri
-import android.provider.MediaStore
 import android.hardware.camera2.CameraCharacteristics
+import android.net.Uri
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.util.Size
 import android.util.SizeF
 import android.view.Surface
@@ -38,7 +38,7 @@ import androidx.lifecycle.LifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.core.RabiLog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

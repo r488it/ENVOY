@@ -8,9 +8,6 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -19,9 +16,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -34,15 +33,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import com.rabi.launcher.ui.Avatar
-import com.rabi.launcher.ui.AvatarGeometry
-import com.rabi.launcher.ui.AvatarSignals
-import com.rabi.launcher.ui.AvatarStyle
+import com.rabi.envoymcp.ui.avatar.Avatar
+import com.rabi.envoymcp.ui.avatar.AvatarGeometry
+import com.rabi.envoymcp.ui.avatar.AvatarSignals
+import com.rabi.envoymcp.ui.avatar.AvatarStyle
+import com.rabi.envoymcp.ui.calllog.CallLogActivity
+import com.rabi.envoymcp.ui.settings.SettingsActivity
 
 /**
  * ENVOY MCP のホーム画面。リゲルと「設定」だけを出す (MCP サーバーの状態は設定の画面と通知で分かる)。

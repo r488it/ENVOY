@@ -2,6 +2,7 @@ package com.rabi.envoymcp.a11y
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.ActivityOptions
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -11,25 +12,25 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
-import android.net.Uri
-import android.os.Bundle
-import android.app.ActivityOptions
 import android.hardware.display.DisplayManager
-import android.view.accessibility.AccessibilityWindowInfo
+import android.os.Bundle
 import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
-import com.rabi.envoymcp.CheckedTap
-import com.rabi.envoymcp.FullCapture
-import com.rabi.envoymcp.ScreenCapture
-import com.rabi.launcher.device.ActionResult
-import com.rabi.launcher.device.AppShortcut
-import com.rabi.launcher.device.AppShortcuts
-import com.rabi.launcher.device.DeviceController
-import com.rabi.launcher.observe.Bounds
-import com.rabi.launcher.observe.Observation
-import com.rabi.launcher.observe.UiNode
-import com.rabi.launcher.parts.IntentSpec
+import android.view.accessibility.AccessibilityWindowInfo
+import androidx.core.graphics.scale
+import androidx.core.net.toUri
+import com.rabi.envoymcp.device.ActionResult
+import com.rabi.envoymcp.device.AppShortcut
+import com.rabi.envoymcp.device.AppShortcuts
+import com.rabi.envoymcp.device.CheckedTap
+import com.rabi.envoymcp.device.DeviceController
+import com.rabi.envoymcp.device.FullCapture
+import com.rabi.envoymcp.device.ScreenCapture
+import com.rabi.envoymcp.observe.Bounds
+import com.rabi.envoymcp.observe.Observation
+import com.rabi.envoymcp.observe.UiNode
+import com.rabi.envoymcp.parts.IntentSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -155,7 +156,7 @@ class A11yDeviceController(
 
     private suspend fun compress(bmp: Bitmap): ByteArray = withContext(Dispatchers.Default) {
         val scale = minOf(1f, 1280f / maxOf(bmp.width, bmp.height))
-        val s = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
+        val s = if (scale < 1f) bmp.scale((bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
         ByteArrayOutputStream().also { s.compress(Bitmap.CompressFormat.JPEG, 72, it) }.toByteArray()
     }
 
@@ -171,7 +172,7 @@ class A11yDeviceController(
     override suspend fun startIntent(spec: IntentSpec): ActionResult {
         val i = Intent()
         spec.action?.let { i.action = it }
-        spec.data?.let { i.data = Uri.parse(it) }
+        spec.data?.let { i.data = it.toUri() }
         spec.category?.let { i.addCategory(it) }
         spec.component?.let { ComponentName.unflattenFromString(it)?.let { c -> i.component = c } } ?: spec.pkg?.let { i.setPackage(it) }
         spec.extras.forEach { (k, v) -> i.putExtra(k, v) }

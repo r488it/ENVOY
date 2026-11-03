@@ -13,7 +13,7 @@ import com.google.ai.edge.gallery.common.ImageUtils
 import com.google.ai.edge.gallery.data.Accelerator
 import com.google.ai.edge.gallery.services.semanticretrieval.UniversalOnDeviceEmbedder
 import com.rabi.envoymcp.McpGraph
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.core.RabiLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay

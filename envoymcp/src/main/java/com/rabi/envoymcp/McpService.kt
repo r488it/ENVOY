@@ -10,9 +10,10 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.IBinder
+import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.mcp.McpServer
 import com.rabi.envoymcp.mcp.TunnelClient
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.ui.settings.SettingsActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

@@ -1,7 +1,7 @@
 package com.rabi.envoymcp.mcp
 
 import android.content.Context
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.core.RabiLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

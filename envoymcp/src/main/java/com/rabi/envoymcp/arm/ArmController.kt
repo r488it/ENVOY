@@ -9,15 +9,22 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.PowerManager
-import android.view.Surface
 import android.os.SystemClock
+import android.view.Surface
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.rabi.envoymcp.McpSettings
-import com.rabi.launcher.conversation.Mood
-import com.rabi.launcher.core.RabiLog
+import com.rabi.envoymcp.core.Expression
+import com.rabi.envoymcp.core.Mood
+import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.music.BeatTracker
+import com.rabi.envoymcp.music.MusicListener
+import com.rabi.envoymcp.music.MusicWatch
+import com.rabi.envoymcp.music.NowPlaying
+import com.rabi.envoymcp.music.SongDances
+import com.rabi.envoymcp.music.Track
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,20 +41,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-/**
- * 腕への頼みの結果 (道具はこれを ok / failed / unknown で返す)。code は failed の理由 (腕の why など)。
- * extra は腕の done に付いた印 (lim: 範囲の端までにした、slow: 速さの上限で遅くした、end:<理由>: 踊りの終わり方)
- */
-data class ArmResult(val result: String, val message: String, val code: String = "", val extra: Set<String> = emptySet()) {
-    val ok get() = result == "ok"
-
-    companion object {
-        fun ok(message: String, extra: Set<String> = emptySet()) = ArmResult("ok", message, extra = extra)
-        fun failed(message: String, code: String) = ArmResult("failed", message, code)
-        fun unknown(message: String) = ArmResult("unknown", message, "noreply")
-    }
-}
 
 /**
  * AgentARM (スマホを載せる腕) を ENVOY MCP から動かす。
@@ -67,9 +60,9 @@ class ArmController(
     /** 端末で鳴っている音から拍を見つける (踊り・音楽の画面・試しで共有。だれかが聞いている間だけ動く) */
     val music: MusicListener,
     /** 音楽が流れているか (音楽の画面と共有) */
-    private val watch: com.rabi.envoymcp.MusicWatch,
+    private val watch: MusicWatch,
     /** 再生中の曲 (通知へのアクセスが許可されていれば。曲ごとの踊りに使う) */
-    private val nowPlaying: com.rabi.envoymcp.NowPlaying,
+    private val nowPlaying: NowPlaying,
 ) {
     /** 設定の画面・道具の結果に出す様子 */
     data class Status(
@@ -113,7 +106,7 @@ class ArmController(
     private val cameraPolicy = FollowPolicy(tolDeg = 5.0, dwellMs = 500, quietMs = 800, failQuietMs = 2_000, lostMs = LOST_MIN * 60_000L)
     private var policy = calmPolicy
     /** 曲ごとに覚えた踊り方 */
-    val songDances = com.rabi.envoymcp.SongDances(context)
+    val songDances = SongDances(context)
     /** 踊ってと頼まれた・予約した (音楽の画面を前に出す) */
     var onDance: (() -> Unit)? = null
     /** 踊りの予約が変わった (音楽の見張りを動かす・止める) */
@@ -127,6 +120,8 @@ class ArmController(
 
     /** 腕と拍の記録 (設定の画面に出す。ファイルにも残す) */
     val log = ArmLog(java.io.File(context.noBackupFilesDir, "arm_log.txt"))
+    /** UNO Q の Wi-Fi (設定の画面から) */
+    val wifi = ArmWifi(link) { armVersion }
 
     private var running = false
     private var sensing = false
@@ -184,12 +179,8 @@ class ArmController(
     private var pendingStraighten = false
     private var receiverOn = false
 
-    // 呼び名を聞いてよいか (腕に obs voice で知らせる): 充電器に付いていて、ChatGPT の音声モード・
-    // 通話の最中でない間だけ、腕 (UNO Q) は呼び名の聞き取りを動かす。話しているかは通話のモードで見る
-    // (音声モード・LINE の通話は MODE_IN_COMMUNICATION、電話は MODE_IN_CALL、かかってきた電話の呼び出しは MODE_RINGTONE)
-    private var talking = false
-    private var gateJob: Job? = null
-    private val modeListener = AudioManager.OnModeChangedListener { m -> setTalking(m != AudioManager.MODE_NORMAL) }
+    /** 呼び名を聞いてよいかを腕に知らせる */
+    private val voiceGate = ArmVoiceGate(context, scope, link, settings, { armVersion }, { onCharger })
     private val powerRx = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             when (i.action) {
@@ -212,9 +203,9 @@ class ArmController(
                     startSensing()
                     sendMood()
                     maybeStraighten()
-                    startVoiceGate()
+                    voiceGate.startRepeating()
                 } else {
-                    gateJob?.cancel(); gateJob = null
+                    voiceGate.stopRepeating()
                     stopSensing()
                     pending?.result?.complete(ArmResult.failed("AgentARM との接続が切れました", "disconnected"))
                 }
@@ -239,11 +230,8 @@ class ArmController(
         // 付けたままで始めたときは直さない (付けたときだけ直す。急に動かないように)
         onCharger = wirelessNow()
         straightened = onCharger
-        context.getSystemService(AudioManager::class.java)?.let { am ->
-            am.addOnModeChangedListener(context.mainExecutor, modeListener)
-            talking = am.mode != AudioManager.MODE_NORMAL
-        }
-        sendVoiceGate()
+        voiceGate.listen()
+        voiceGate.send()
     }
 
     fun stop() {
@@ -259,8 +247,8 @@ class ArmController(
         autoJob?.cancel()
         cancelReservation(null)
         if (receiverOn) { runCatching { context.unregisterReceiver(powerRx) }; receiverOn = false }
-        runCatching { context.getSystemService(AudioManager::class.java)?.removeOnModeChangedListener(modeListener) }
-        gateJob?.cancel(); gateJob = null
+        voiceGate.unlisten()
+        voiceGate.stopRepeating()
         link.stop()
         stopSensing()
         face?.stop()
@@ -500,12 +488,12 @@ class ArmController(
      * 表情の動きの最中に次の表情が来たら、今の動きが終わってからする (いちばん新しい 1 つだけ。途中で置き換えると、
      * 腕は置き換えたときの向きを元にするので、元の向きに戻らなくなる)
      */
-    fun express(e: com.rabi.launcher.conversation.Expression, chained: Boolean = false) {
+    fun express(e: Expression, chained: Boolean = false) {
         scope.launch(Dispatchers.Main) { expressNow(e, chained) }
     }
 
     /** 表情の動きをして、終わるまで待つ (呼び名で起きたとき、表情のあとに顔へ向けるため)。動いたら true */
-    suspend fun expressNow(e: com.rabi.launcher.conversation.Expression, chained: Boolean = false): Boolean = withContext(Dispatchers.Main) {
+    suspend fun expressNow(e: Expression, chained: Boolean = false): Boolean = withContext(Dispatchers.Main) {
         if (check() != null || newCheck() != null) return@withContext false
         if (gestureRunning) { nextGesture = e; RabiLog.i("arm", "express ${e.id} queued"); return@withContext false }
         val s = _status.value
@@ -518,7 +506,7 @@ class ArmController(
         }
         gestureRunning = true
         try {
-            val (keys, repeat) = gestureOf(e)
+            val (keys, repeat) = ArmGestures.of(e)
             val r = motion(keys, repeat)
             RabiLog.i("arm", "express ${e.id} -> ${r.result}")
             r.ok
@@ -531,35 +519,9 @@ class ArmController(
 
     /** 表情の動きをしている最中か、その間に来た次の表情 */
     private var gestureRunning = false
-    private var nextGesture: com.rabi.launcher.conversation.Expression? = null
+    private var nextGesture: Expression? = null
     /** 最後に表情の動きを終えた時刻 (elapsedRealtime) */
     private var gestureEndedAt = 0L
-
-    /**
-     * 表情ごとの腕の動き (始めた向きからの差。tilt は上が正、turn・roll は左右) と、くり返す回数。
-     * 長さは画面の表情 (出る・続く・戻る) とほぼ同じにしてある。
-     * 速さの上限 (1 秒に約 28°) に収まる長さにしてある
-     * - うれしい: 少し上を向いて弾み、左右に首をかしげて揺れる (ルンルン)。約 3.5 秒
-     * - 笑う: 少し上を向き、「は・は・は」と小刻みにうなずく。2 回。約 3.2 秒
-     * - 驚き: のけぞって (上を向いて) しばらく止まり、ゆっくり戻る。約 2.7 秒
-     * - 悲しい: ゆっくりうなだれて (下を向いて) しばらくそのまま、ゆっくり戻る。約 3.7 秒
-     * - 照れ: 横下へ顔をそらし、もじもじと首をかしげ、戻る。約 3.2 秒
-     * - ウインク: 首をかしげて止まり、戻る。約 1.9 秒
-     */
-    private fun gestureOf(e: com.rabi.launcher.conversation.Expression): Pair<List<Key>, Int> = when (e) {
-        com.rabi.launcher.conversation.Expression.HAPPY -> listOf(
-            Key(0.0, 5.0, 0.0, 360), Key(0.0, 4.0, 6.0, 480), Key(0.0, 4.0, -6.0, 840), Key(0.0, 4.0, 6.0, 840), Key(0.0, 4.0, 0.0, 420), Key(0.0, 0.0, 0.0, 600)) to 1
-        com.rabi.launcher.conversation.Expression.LAUGH -> listOf(
-            Key(0.0, 5.0, 0.0, 360), Key(0.0, 2.0, 0.0, 220), Key(0.0, 5.0, 0.0, 220), Key(0.0, 2.0, 0.0, 220), Key(0.0, 5.0, 0.0, 220), Key(0.0, 0.0, 0.0, 360)) to 2
-        com.rabi.launcher.conversation.Expression.SURPRISED -> listOf(
-            Key(0.0, 8.0, 0.0, 560), Key(0.0, 8.0, 0.0, 1000), Key(0.0, 0.0, 0.0, 1100)) to 1
-        com.rabi.launcher.conversation.Expression.SAD -> listOf(
-            Key(0.0, -10.0, 0.0, 1300), Key(0.0, -10.0, 0.0, 1200), Key(0.0, 0.0, 0.0, 1200)) to 1
-        com.rabi.launcher.conversation.Expression.SHY -> listOf(
-            Key(10.0, -5.0, 0.0, 720), Key(10.0, -5.0, 4.0, 300), Key(10.0, -5.0, -4.0, 580), Key(10.0, -5.0, 4.0, 580), Key(10.0, -5.0, 0.0, 300), Key(0.0, 0.0, 0.0, 760)) to 1
-        com.rabi.launcher.conversation.Expression.WINK -> listOf(
-            Key(0.0, 0.0, 8.0, 560), Key(0.0, 0.0, 8.0, 700), Key(0.0, 0.0, 0.0, 620)) to 1
-    }
 
     /**
      * 音楽に合わせて踊る。端末で鳴っている音から拍を見つけ (数秒)、腕に「踊って」と頼んで、拍を送り続ける。
@@ -624,7 +586,7 @@ class ArmController(
         RabiLog.i("arm", "頼みました: 踊る ($st${if (auto) "、音楽が流れたので" else ""})")
         log.add("踊ります: $st 大きさ ${r2(am)} テンポ ${beat.bpm.roundToInt()} 確かさ ${(beat.confidence * 100).roundToInt()}%" +
             (track?.let { " 曲「${it.label}」${if (saved != null && style == null) " (覚えた踊り方)" else ""}" } ?: "") + if (auto) " (音楽が流れたので)" else "")
-        if (remember) songDances.put(track!!, com.rabi.envoymcp.SongDances.Pref(st, am))
+        if (remember) songDances.put(track!!, SongDances.Pref(st, am))
         danceSeed = track?.seed
         dancing = true
         _status.update { it.copy(dancing = true) }
@@ -704,7 +666,7 @@ class ArmController(
     }
 
     /** 曲が替わった: 踊っている途中なら、腕に新しい曲の種を知らせる (振り付けをその曲のものに替える) */
-    private fun onTrack(t: com.rabi.envoymcp.Track?) {
+    private fun onTrack(t: Track?) {
         if (dancing && t?.paused == true) scheduleMusicStop()
         if (t == null || !dancing || armVersion < 3 || t.seed == danceSeed) return
         danceSeed = t.seed
@@ -761,6 +723,9 @@ class ArmController(
         mood = m
         sendMood()
     }
+
+    /** 設定で呼び名のしきい値を変えた: すぐ腕に送る */
+    fun wakeSettingsChanged() = scope.launch(Dispatchers.Main) { voiceGate.send() }
 
     /** 道具の結果・状態の取得に付ける腕の様子 */
     fun statusJson(): JSONObject {
@@ -1131,29 +1096,6 @@ class ArmController(
         if (sensing) { pose.stop(); sensing = false }
     }
 
-    // ---------------------------------------------------------------- 呼び名を聞いてよいか (腕に知らせる)
-
-    private fun setTalking(t: Boolean) {
-        if (t == talking) return
-        talking = t
-        sendVoiceGate()
-    }
-
-    /** 腕に今の状態を送る (変わったとき・hello のあと。BLE の観測は詰まると捨てられるので、ふだんも数秒ごとに送り直す) */
-    private fun sendVoiceGate() {
-        if (!link.ready || armVersion < 6) return
-        link.sendObs(JSONObject().put("t", "obs").put("k", "voice").put("dock", onCharger).put("talk", talking)
-            .put("wth", r2(settings.wakeThreshold.toDouble())))
-    }
-
-    /** 設定で呼び名のしきい値を変えた: すぐ腕に送る */
-    fun wakeSettingsChanged() = scope.launch(Dispatchers.Main) { sendVoiceGate() }
-
-    private fun startVoiceGate() {
-        gateJob?.cancel()
-        gateJob = scope.launch { while (isActive) { sendVoiceGate(); delay(VOICE_GATE_EVERY_MS) } }
-    }
-
     // ---------------------------------------------------------------- マグネット充電器
 
     private fun wirelessNow(): Boolean =
@@ -1166,7 +1108,7 @@ class ArmController(
             delay(if (tries == 0) 300 else 500)
             when {
                 wirelessNow() -> {
-                    if (!onCharger) { onCharger = true; sendVoiceGate() }
+                    if (!onCharger) { onCharger = true; voiceGate.send() }
                     if (!straightened) { RabiLog.i("charge", "充電器に付きました"); pendingStraighten = true; maybeStraighten() }
                 }
                 tries < 6 -> checkAttached(tries + 1)
@@ -1184,7 +1126,7 @@ class ArmController(
             delay(1000)
             if (wirelessNow()) return@launch            // 一瞬止まっただけ
             onCharger = false
-            sendVoiceGate()
+            voiceGate.send()
             straightened = false
             pendingStraighten = false
             RabiLog.i("charge", "充電器から外れたので、腕を元の姿勢に戻します")
@@ -1209,89 +1151,11 @@ class ArmController(
         }
     }
 
-    // ---------------------------------------------------------------- UNO Q の Wi-Fi (設定の画面から)
-
-    /** 集めている net の返事 (頼みの id ごと)。list (saved・scan) は n 件そろうまで、ほかは結果の 1 件 */
-    private class NetWait(val op: String, val done: CompletableDeferred<List<JSONObject>>) { val got = ArrayList<JSONObject>() }
-    private val netWaits = java.util.concurrent.ConcurrentHashMap<String, NetWait>()
-    private var netN = 0
-
-    /** UNO Q の Wi-Fi を扱えるか (つながっていて、腕のプログラムが 7 以降)。だめなら理由 */
-    fun netCheck(): String? = when {
-        !link.ready -> "腕 (UNO Q) につながっていません"
-        armVersion < 7 -> "UNO Q のプログラムが古いので使えません (agentarm-d を更新してください)"
-        else -> null
-    }
-
-    private fun onNet(m: JSONObject) {
-        val w = netWaits[m.optString("id")] ?: return
-        if (w.op == "add" && m.optString("op") != "add") return
-        synchronized(w) {
-            w.got += m
-            val n = m.optInt("n", -1)
-            val listOp = w.op == "saved" || w.op == "scan"
-            if (!listOp || n <= 0 || w.got.size >= n) w.done.complete(w.got.toList())
-        }
-    }
-
-    /** 頼みを送り、返事を待つ (時間切れ・送れなければ null)。sendOnly の頼みは id をそろえて別に送る */
-    private suspend fun netAsk(op: String, extra: JSONObject = JSONObject(), id: String = "w${++netN}", waitOp: String = op,
-                               then: (() -> Boolean)? = null, timeoutMs: Long = NET_TIMEOUT_MS): List<JSONObject>? {
-        val w = NetWait(waitOp, CompletableDeferred())
-        netWaits[id] = w
-        try {
-            if (!link.sendCmd(extra.put("t", "net").put("id", id).put("op", op))) return null
-            if (then != null && !then()) return null
-            return withTimeoutOrNull(timeoutMs) { w.done.await() }
-        } finally { netWaits.remove(id) }
-    }
-
-    /** 今つながっている Wi-Fi (ssid・ip・sig) */
-    suspend fun wifiStatus(): JSONObject? = netAsk("status")?.firstOrNull()
-
-    /** 登録してある Wi-Fi (name・ssid) */
-    suspend fun wifiSaved(): List<JSONObject>? = netAsk("saved")?.filter { it.has("name") }
-
-    /** 近くの Wi-Fi (ssid・sig・sec。強い順) */
-    suspend fun wifiScan(): List<JSONObject>? = netAsk("scan", timeoutMs = NET_SCAN_TIMEOUT_MS)?.filter { it.has("ssid") }
-
-    suspend fun wifiDelete(name: String): Pair<Boolean, String> = result(netAsk("delete", JSONObject().put("name", name)))
-
-    suspend fun wifiConnect(name: String): Pair<Boolean, String> = result(netAsk("connect", JSONObject().put("name", name), timeoutMs = NET_SCAN_TIMEOUT_MS))
-
-    /**
-     * Wi-Fi を登録する。パスワードは、鍵を交換してから暗号化して送る (BLE を盗み聞きされても読めない)。
-     * sec: wpa (WPA2 など)・sae (WPA3 だけ)・open (パスワードなし)
-     */
-    suspend fun wifiAdd(ssid: String, sec: String, psk: String): Pair<Boolean, String> {
-        if (sec == "open") return result(netAsk("add", JSONObject().put("ssid", ssid).put("sec", sec)))
-        val mine = WifiCrypto.newKey()
-        val key = netAsk("key", JSONObject().put("pub", b64(mine.public)))?.firstOrNull()
-            ?: return false to "UNO Q から返事がありません"
-        val theirs = runCatching { android.util.Base64.decode(key.optString("pub"), android.util.Base64.NO_WRAP) }.getOrNull()
-        val shared = theirs?.let { WifiCrypto.agree(mine.secret, it) } ?: return false to "鍵を交換できませんでした"
-        val (kEnc, kMac) = WifiCrypto.sessionKeys(shared, mine.public, theirs)
-        val id = "w${++netN}"
-        val nonce = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
-        val (ct, tag) = WifiCrypto.encrypt(kEnc, kMac, id, ssid, psk, nonce)
-        // ネットワーク名 (add) を送ってから、同じ id で暗号化したパスワード (psk) を送り、登録の結果 (add) を待つ
-        return result(netAsk("add", JSONObject().put("ssid", ssid).put("sec", sec), id = id, waitOp = "add", then = {
-            link.sendCmd(JSONObject().put("t", "net").put("id", id).put("op", "psk").put("n", b64(nonce)).put("c", b64(ct)).put("g", b64(tag)))
-        }, timeoutMs = NET_SCAN_TIMEOUT_MS))
-    }
-
-    private fun result(r: List<JSONObject>?): Pair<Boolean, String> {
-        val m = r?.firstOrNull() ?: return false to "UNO Q から返事がありません"
-        return m.optBoolean("ok") to m.optString("msg")
-    }
-
-    private fun b64(b: ByteArray) = android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP)
-
     // ---------------------------------------------------------------- 腕からの知らせ
 
     private fun onArmMessage(m: JSONObject) {
         when (m.optString("t")) {
-            "net" -> onNet(m)
+            "net" -> wifi.onNet(m)
             "done" -> finish(m.optString("id"), doneResult(m))
             "fail" -> {
                 // 「聞いている」動きが踊りに置き換わったのは、ふつうのこと (記録に出さない)
@@ -1310,7 +1174,7 @@ class ArmController(
                 armVersion = m.optInt("v", 1)
                 armIp = m.optString("ip").takeIf { it.isNotBlank() }
                 _status.update { it.copy(calibrated = m.optBoolean("calibrated"), version = armVersion) }
-                sendVoiceGate()
+                voiceGate.send()
             }
             "state" -> {
                 armMode = m.optString("mode")
@@ -1380,9 +1244,6 @@ class ArmController(
 
     companion object {
         private const val APP = "envoymcp"
-        /** UNO Q の Wi-Fi の返事を待つ長さ (探す・つなぐ・登録は nmcli が遅いので長め) */
-        private const val NET_TIMEOUT_MS = 10_000L
-        private const val NET_SCAN_TIMEOUT_MS = 30_000L
         const val PORTRAIT = "portrait"
         const val LANDSCAPE = "landscape"
         /** 腕が動いているモード */
@@ -1396,8 +1257,6 @@ class ArmController(
         private const val FACE_TO_WAIT_MS = 18_000L
         private const val ORIENT_WAIT_MS = 16_000L
         private const val HOME_WAIT_MS = 12_000L
-        /** 呼び名を聞いてよいかを、腕に送り直す間 (ms) */
-        private const val VOICE_GATE_EVERY_MS = 5_000L
         /** カメラの最初の画像を待つ長さ・画像が届いているとみなす新しさ */
         private const val CAMERA_WAIT_MS = 3_000L
         private const val FRESH_FRAME_MS = 600L
