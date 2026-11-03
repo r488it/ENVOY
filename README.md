@@ -181,29 +181,6 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 4. 設定の「ユーザー補助」を開き、ENVOY MCP をオンにする（または ADB を使う）
 5. 腕を使うときは、設定の「AgentARM」をオンにして、腕のボードとつなぐ
 
-## フォルダー
-
-| 場所 | 中身 |
-| --- | --- |
-| `envoymcp/src/main/java/com/rabi/envoymcp/` | アプリの入口（ホーム・アシスタント・MCP のサービス・通知の受け口）と、部品のつなぎ役・設定の値 |
-| `…/envoymcp/mcp/` | MCP サーバーと道具（道具の一覧は `McpTools.kt`、中身は種類ごとのファイル） |
-| `…/envoymcp/a11y/` | ユーザー補助による端末の操作 |
-| `…/envoymcp/device/` | 端末の操作の方式（ADB・ユーザー補助の切り替え）・アプリのショートカット |
-| `…/envoymcp/device/adb/` | 自分の端末の adbd への接続とペアリング |
-| `…/envoymcp/arm/` | AgentARM との連携（BLE・顔の追跡・撮りながら追う・ボードの Wi-Fi） |
-| `…/envoymcp/call/` | 電話の代役・着信への応答・LINE の通話・通話の記録・連絡先 |
-| `…/envoymcp/music/` | 音楽の画面・歌詞・再生中の曲・拍の取り方 |
-| `…/envoymcp/voice/` | 音声モードに重ねるリゲル |
-| `…/envoymcp/monitor/` | モニター（PC モード）のリゲル |
-| `…/envoymcp/media/` | 写真の検索と表示 |
-| `…/envoymcp/ui/` | 設定・通話の記録・承認・操作中のオーバーレイ・リゲルの描画（`avatar/`） |
-| `…/envoymcp/parts/`・`safety/`・`observe/` | 部品・確定の承認・画面の読み取り |
-| `…/envoymcp/core/`・`auth/` | ログ・文字の整え・暗号化した保存・表情などの状態、ChatGPT でサインイン |
-| `…/launcher/adb/` | ペアリングの通知の受け口（通知の宛先なので、クラスの名前を変えない） |
-| `…/com/google/ai/edge/gallery/` | 写真の検索に使う Google AI Edge Gallery のコード（Apache 2.0） |
-| `envoymcp/src/main/assets/` | 部品の見本・同梱したもののライセンス |
-| `docs/images/` | この README の画像 |
-
 ## 同梱しているもの
 
 - Google AI Edge Gallery の一部（Apache 2.0）: `envoymcp/src/main/assets/licenses/edge-gallery/`
