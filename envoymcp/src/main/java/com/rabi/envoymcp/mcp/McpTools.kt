@@ -121,7 +121,7 @@ class McpTools(private val g: McpGraph) : ToolHost {
                 "contact に連絡先の名前、message に伝える用件 (相手に伝わる言い方で、具体的に)、caller に利用者の呼び名 (省略すると設定の名前) を入れます。" +
                 "かけ始めたらすぐ戻ります。1〜3 分ほどしたら rigel_call_status で結果 (伝わったか・相手の返事の要点・やり取り) を確かめて、利用者に伝えてください。" +
                 "app=line なら LINE の音声通話でかけます (contact に LINE の友だちの表示名。スマホのロックが解除されている必要があります)。" +
-                "UNO Q (腕) につながっていないと使えません。緊急の番号にはかけません。",
+                "腕のボードにつながっていないと使えません。緊急の番号にはかけません。",
             act = false, caption = "リゲルが電話をかけています", adb = false, readOnly = false, timeoutMs = APPROVAL_TIMEOUT_MS + 60_000L,
             params = props("contact" to str("連絡先の名前 (例: 田中太郎・お母さん)。app=line なら LINE の友だちの表示名"), "number" to str("電話番号 (連絡先にない番号のとき)"),
                 "message" to str("相手に伝える用件 (例: 明日の会議は 10 時からに変わりました)"),
@@ -315,6 +315,14 @@ class McpTools(private val g: McpGraph) : ToolHost {
             act = false, caption = "", adb = false, readOnly = false, quiet = true,
             params = props("expression" to enumOf("見せる表情", *Expression.entries.map { it.id }.toTypedArray())),
             required = listOf("expression")) { voiceTools.express(it) },
+        // 定期の依頼 (ChatGPT のスケジュール済みタスク) の結果を預かる。ベルを付けるだけで、リゲルを操作中の顔にしない
+        Tool("rigel_notify", "リゲルにお知らせを預ける",
+            "利用者に伝えたいことを、スマホのリゲルに預けます。スケジュール済みタスク (定期の依頼) で調べた結果を届けるときに使います。" +
+                "スマホのリゲルにベルが付き、利用者がリゲルを押すと、音声モードで伝えます。" +
+                "伝えることが無いとき (新しい情報が無い・知らせる条件に当たらない) は呼びません。利用者と今話しているなら、呼ばずにそのまま伝えてください。",
+            act = false, caption = "", adb = false, readOnly = false, quiet = true,
+            params = props("message" to str("伝える中身 (要点を短く。500 字まで)"), "title" to str("短い見出し (省略可。例: 〇〇のニュース)")),
+            required = listOf("message")) { voiceTools.notify(it) },
 
         Tool("arm_stop", "腕を止める",
             "AgentARM の今の動きを止めます: 踊っていれば踊り始めた向きに戻して終え、顔を追っていればやめ、動いている途中ならその場で止めます。" +

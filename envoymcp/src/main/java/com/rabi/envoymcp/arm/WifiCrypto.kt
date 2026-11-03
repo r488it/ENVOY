@@ -6,7 +6,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * UNO Q に Wi-Fi のパスワードを送るときの暗号 (agentarm/linux/agentarm_d/wifi.py と同じ。腕との BLE は暗号化していないため)。
+ * ボードに Wi-Fi のパスワードを送るときの暗号 (agentarm/linux/agentarm_d/wifi.py と同じ。腕との BLE は暗号化していないため)。
  * X25519 (毎回新しい鍵) で共有の秘密を作り、HKDF-SHA256 で暗号の鍵と確かめの鍵に分け、HMAC-SHA256 の CTR で暗号化し、
  * HMAC-SHA256 (16 バイト) で改ざんを確かめる。頼みの id とネットワーク名も確かめに含める
  */
@@ -25,8 +25,8 @@ object WifiCrypto {
     }
 
     /** 暗号の鍵と確かめの鍵 (各 32 バイト) */
-    fun sessionKeys(shared: ByteArray, phonePub: ByteArray, unoqPub: ByteArray): Pair<ByteArray, ByteArray> {
-        val k = hkdf(shared, phonePub + unoqPub, "agentarm-wifi-v1".toByteArray(), 64)
+    fun sessionKeys(shared: ByteArray, phonePub: ByteArray, boardPub: ByteArray): Pair<ByteArray, ByteArray> {
+        val k = hkdf(shared, phonePub + boardPub, "agentarm-wifi-v1".toByteArray(), 64)
         return k.copyOfRange(0, 32) to k.copyOfRange(32, 64)
     }
 

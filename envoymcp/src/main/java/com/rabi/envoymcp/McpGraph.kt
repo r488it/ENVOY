@@ -15,7 +15,6 @@ import com.rabi.envoymcp.a11y.A11yService
 import com.rabi.envoymcp.arm.ArmController
 import com.rabi.envoymcp.arm.RecordActivity
 import com.rabi.envoymcp.auth.ChatGptAuth
-import com.rabi.envoymcp.call.CallNotes
 import com.rabi.envoymcp.call.CallRecords
 import com.rabi.envoymcp.call.CallScreen
 import com.rabi.envoymcp.call.IncomingCall
@@ -177,13 +176,13 @@ class McpGraph(val context: Context) {
     /** 音楽の画面の歌詞 (設定でオンのときだけ、LRCLIB から取る) */
     val lyrics = LyricsRepo(context, scope)
     val arm = ArmController(context, scope, settings, music, musicWatch, nowPlaying)
-    /** リゲルが代わりに電話して用件を伝える (UNO Q の電話の代役 callservice.py に頼む) */
+    /** リゲルが代わりに電話して用件を伝える (ボードの電話の代役 callservice.py に頼む) */
     val rigelCaller = RigelCaller(this)
     /** リゲルが代わりに電話している間の画面 (やり取りを文字で) と、その記録 (あとから見る・録音) */
     val callScreen = CallScreen(this)
     val callRecords = CallRecords(context)
-    /** 電話のあと、まだ本人に伝えていないこと (リゲルのタップで開いた音声モードに引き継ぐ) */
-    val callNotes = CallNotes(context)
+    /** まだ本人に伝えていないお知らせ: 電話のあとのこと・定期の依頼の結果 (リゲルのタップで開いた音声モードに引き継ぐ) */
+    val notices = Notices(context)
     /** 写真を言葉で探す (EmbeddingGemma 2。端末の中) */
     val photos = PhotoSearch(this)
     /** 見つけた写真を、画面の下に番号付きで並べる (本人が目で確かめる) */
@@ -393,7 +392,7 @@ class McpGraph(val context: Context) {
     }
 
     /**
-     * 腕 (UNO Q) が呼び名「リゲル」を本人の声で聞いた (試験): リゲルのタップと同じく、ChatGPT の音声モードを開く。
+     * 腕のボードが呼び名「リゲル」を本人の声で聞いた (試験): リゲルのタップと同じく、ChatGPT の音声モードを開く。
      * もう ChatGPT と話している・操作の途中のときは何もしない (タップと違って、操作は止めない)
      */
     private suspend fun wakeFromArm(score: Double) {
@@ -439,18 +438,18 @@ class McpGraph(val context: Context) {
 
     /**
      * リゲルをタップした: 道具が動いている間は止める。何もしていなければ、止めた状態を解いて ChatGPT を開く。
-     * 電話のあとで本人にまだ伝えていないこと (callNotes) があれば、最初の一言で送って伝えてもらう (送れたものだけ消す)
+     * 本人にまだ伝えていないお知らせ (notices。電話のあとのこと・定期の依頼の結果) があれば、最初の一言で送って伝えてもらう (送れたものだけ消す)
      */
     fun tapRigel(from: String) {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser(from); return }
         clearStop()
         // 音声モードの真ん中のリゲルを、ChatGPT が開くのを待たずに出す (開けなければ消す)
         voiceStage.expectVoice()
-        val notes = callNotes.notes.value
-        val handoff = CallNotes.handoff(notes)
+        val notes = notices.notes.value
+        val handoff = Notices.handoff(notes)
         if (handoff != null) {
-            RabiLog.i("graph", "hand off ${notes.size} call notes")
-            voicePrimer.expectReport(handoff) { callNotes.remove(notes.map { it.id }) }
+            RabiLog.i("graph", "hand off ${notes.size} notices")
+            voicePrimer.expectReport(handoff) { notices.remove(notes.map { it.id }) }
         } else voicePrimer.expect()
         if (!openChatGptVoice()) { RabiLog.w("graph", "cannot open ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
     }
@@ -506,7 +505,7 @@ class McpGraph(val context: Context) {
     /**
      * リゲルの電話が終わった: ChatGPT の音声モードを開き直し、最初の一言で電話の結果を送って、本人に報告してもらう。
      * 電話が終わっても、しばらく端末は通話中のまま (音声モードが始まらない) なので、通話中が解けるのを待ってから開く (リゲルの覆いは出したまま)。
-     * 開き直せなかったら (次の着信が鳴っている・ChatGPT を開けない) onSkip を呼ぶ (結果は引き継ぎに残してもらう)
+     * 開き直せなかったら (次の着信が鳴っている・ChatGPT を開けない) onSkip を呼ぶ (結果はお知らせに残してもらう)
      */
     fun reopenVoiceAfterCall(report: String, onSkip: () -> Unit = {}) {
         scope.launch(Dispatchers.IO) {
@@ -574,7 +573,7 @@ class McpGraph(val context: Context) {
 
     init {
         overlay = OperationOverlay(context, state, { AvatarStyle.byId(settings.avatar) }, enabled = { settings.bubbleEnabled },
-            badge = callNotes.notes.map { it.size }.stateIn(scope, SharingStarted.Eagerly, callNotes.notes.value.size),
+            badge = notices.notes.map { it.size }.stateIn(scope, SharingStarted.Eagerly, notices.notes.value.size),
             loadPos = { settings.bubbleX to settings.bubbleY }, savePos = { x, y -> settings.bubbleX = x; settings.bubbleY = y })
         // 操作中のリゲルをタップ: 止める。何もしていなければ ChatGPT の音声モードを開く
         overlay.onTap = { orbTap() }

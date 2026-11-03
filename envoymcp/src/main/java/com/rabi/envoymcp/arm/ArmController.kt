@@ -48,7 +48,7 @@ import kotlin.math.roundToInt
  * - ENVOY MCP 本体で: マグネット充電器に付けたら、まっすぐ (縦) に直しながら顔に向ける (付けるごとに 1 回)。外したら、元の姿勢に戻す
  * - 顔は ENVOY MCP の中で前面カメラ (CameraX + ML Kit。通信なし) で探し、顔の向き (h, v) と重力だけを BLE で腕に送る (映像は外に出さない)
  * - 腕は「頼まれたら 1 回合わせる」(face_user) だけなので、追い続けるときは、顔がずれたら ENVOY MCP が向け直しを頼む (FollowPolicy)
- * - 任意の動き (move・motion) と、音楽に合わせて踊る (dance)。踊りの振り付けは腕 (UNO Q) が作り、スマホは端末の出力の音から
+ * - 任意の動き (move・motion) と、音楽に合わせて踊る (dance)。踊りの振り付けは腕のボードが作り、スマホは端末の出力の音から
  *   見つけた拍 (MusicListener) を送るだけ。設定でオンにすると、音楽が流れたら自動で踊る (スマホが腕に付いているときだけ)
  * - 本人が設定でオンにしていて、MCP サーバーが動いている間だけ動く (McpService が start / stop を呼ぶ)
  * 中の状態はメインスレッドだけで触る (道具からは withContext(Main) で呼ぶ)。
@@ -113,14 +113,14 @@ class ArmController(
     var onReserveChanged: (() -> Unit)? = null
     /** 録画を始めた (録画の画面を開く) */
     var onRecordStarted: (() -> Unit)? = null
-    /** 腕 (UNO Q) が呼び名「リゲル」を本人の声で聞いた (試験。本人らしさ 0..1) */
+    /** 腕のボードが呼び名「リゲル」を本人の声で聞いた (試験。本人らしさ 0..1) */
     var onWake: ((Double) -> Unit)? = null
     /** 腕の家のネットワークでの IP (hello の ip。版 5 から。電話の代役 (RigelCaller) がつなぐ先) */
     @Volatile var armIp: String? = null; private set
 
     /** 腕と拍の記録 (設定の画面に出す。ファイルにも残す) */
     val log = ArmLog(java.io.File(context.noBackupFilesDir, "arm_log.txt"))
-    /** UNO Q の Wi-Fi (設定の画面から) */
+    /** ボードの Wi-Fi (設定の画面から) */
     val wifi = ArmWifi(link) { armVersion }
 
     private var running = false
@@ -751,7 +751,7 @@ class ArmController(
 
     /** move・motion・dance は、腕のプログラムの版 2 から */
     private fun newCheck(): ArmResult? = if (armVersion >= 2) null
-        else ArmResult.failed("AgentARM のプログラムが古いため、この動きはできません。UNO Q のプログラム (agentarm-d) を更新してください。", "old")
+        else ArmResult.failed("AgentARM のプログラムが古いため、この動きはできません。ボードのプログラム (agentarm-d) を更新してください。", "old")
 
     private fun micCheck(): ArmResult? = if (music.hasPermission()) null
         else ArmResult.failed("音楽の拍を取るのに、マイクの許可が要ります (端末の出力の音を読むため。マイクの音は使いません)。利用者に、スマホの ENVOY MCP の設定の「AgentARM」で許可してもらってください。", "mic")

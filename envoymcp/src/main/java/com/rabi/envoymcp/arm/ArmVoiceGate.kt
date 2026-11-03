@@ -13,7 +13,7 @@ import kotlin.math.roundToInt
 
 /**
  * 呼び名を聞いてよいかを腕に知らせる (obs voice): 充電器に付いていて、ChatGPT の音声モード・
- * 通話の最中でない間だけ、腕 (UNO Q) は呼び名の聞き取りを動かす。話しているかは通話のモードで見る
+ * 通話の最中でない間だけ、腕のボードは呼び名の聞き取りを動かす。話しているかは通話のモードで見る
  * (音声モード・LINE の通話は MODE_IN_COMMUNICATION、電話は MODE_IN_CALL、かかってきた電話の呼び出しは MODE_RINGTONE)。
  * version は腕のプログラムの版 (hello の v)、docked はスマホが充電器 (腕) に付いているか
  */

@@ -102,8 +102,8 @@ internal class CallTools(st: ToolState) : ToolGroup(st) {
     }
 
     /**
-     * リゲルが代わりに電話して用件を伝える。本人の承認 (相手・用件) のあと、UNO Q の電話の代役に頼み、
-     * UNO Q がヘッドセットとしてつながったら発信する。すぐ戻り、結果は rigel_call_status で返す
+     * リゲルが代わりに電話して用件を伝える。本人の承認 (相手・用件) のあと、ボードの電話の代役に頼み、
+     * ボードがヘッドセットとしてつながったら発信する。すぐ戻り、結果は rigel_call_status で返す
      */
     suspend fun rigelCall(a: JSONObject): ToolResult {
         val app = a.optString("app").ifBlank { "phone" }

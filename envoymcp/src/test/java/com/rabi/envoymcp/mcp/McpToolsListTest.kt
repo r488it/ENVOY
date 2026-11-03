@@ -22,7 +22,7 @@ class McpToolsListTest {
             "share_screenshot", "end_voice_chat", "search_photos", "show_photo", "share_photo", "open_panel", "tap", "type_text",
             "scroll", "back", "home", "press_key", "wait",
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
-            "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "arm_stop",
+            "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "rigel_notify", "arm_stop",
             "run_part", "save_part", "delete_part",
         ), names)
     }

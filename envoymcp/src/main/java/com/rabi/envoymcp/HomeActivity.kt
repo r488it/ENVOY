@@ -95,7 +95,7 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
     val solid = remember(resumed) { g.settings.avatar3d }
     // まだ見ていない通話の記録の数 (「通話の記録」の横に出す)
     val unseen by g.callRecords.unseen.collectAsState()
-    val notes by g.callNotes.notes.collectAsState()
+    val notes by g.notices.notes.collectAsState()
     LaunchedEffect(resumed) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { g.callRecords.refreshUnseen() } }
     Box(Modifier.fillMaxSize().background(Color(0xFF080B10))) {
         Avatar(
@@ -128,8 +128,8 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 28.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             if (st.caption.isNotBlank()) Text(st.caption, color = Color(0xFFE8ECF2), fontSize = 22.sp, textAlign = TextAlign.Center, maxLines = 2)
-            // 電話のあとで、まだ伝えていないことがある (リゲルをタップすると、音声モードの最初に伝える)
-            else if (notes.isNotEmpty()) Text("電話 ${notes.size} 件の内容があります。リゲルをタップすると伝えます", color = Color(0xFF8FB4FF),
+            // まだ伝えていないお知らせ (電話のあとのこと・定期の依頼の結果) がある (リゲルをタップすると、音声モードの最初に伝える)
+            else if (notes.isNotEmpty()) Text("お知らせが ${notes.size} 件あります。リゲルをタップすると伝えます", color = Color(0xFF8FB4FF),
                 fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.padding(bottom = 4.dp))
             // 設定は真ん中、通話の記録 (リゲルが代わりにかけた・出た電話) は同じ高さの右端
             Box(Modifier.fillMaxWidth()) {

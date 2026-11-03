@@ -57,7 +57,7 @@ data class CallInfo(
     val talkSec get() = if (answeredAt > 0L) (((if (endedAt > 0L) endedAt else System.currentTimeMillis()) - answeredAt) / 1000).coerceAtLeast(0) else 0
 
     /**
-     * やり取りの言葉が届いた (UNO Q は、言い終えるまで、ここまでの言葉を何度も送ってくる): その人の言い終えていない行を書き換える
+     * やり取りの言葉が届いた (ボードは、言い終えるまで、ここまでの言葉を何度も送ってくる): その人の言い終えていない行を書き換える
      * (無ければ足す)。final なら、その行を言い終えたことにする (次の言葉は新しい行)
      */
     fun withText(who: String, text: String, final: Boolean, now: Long): CallInfo {
@@ -172,7 +172,7 @@ class CallRecords(private val context: Context) {
 
     fun audioFile(c: CallInfo): File? = c.audio.takeIf { it.isNotEmpty() }?.let { File(dir, it) }?.takeIf { it.exists() }
 
-    /** 保存する。pcm は UNO Q から届いた録音 (16 ビット・モノラル。無ければ null)。保存したら pcm は消す */
+    /** 保存する。pcm はボードから届いた録音 (16 ビット・モノラル。無ければ null)。保存したら pcm は消す */
     fun save(c: CallInfo, pcm: File?, rate: Int): CallInfo {
         var audio = ""
         if (pcm != null && pcm.length() > 0) {

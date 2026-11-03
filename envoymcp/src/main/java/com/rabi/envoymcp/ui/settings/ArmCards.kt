@@ -39,7 +39,7 @@ import kotlin.math.roundToInt
 /** 腕に頼んで、結果を一言で出す */
 private fun CoroutineScope.armGo(say: (String) -> Unit, block: suspend () -> ArmResult) { launch { say("AgentARM: " + block().message) } }
 
-/** AgentARM の区分: 腕・呼び名・踊り・試す・UNO Q の Wi-Fi (呼び名・踊り・試すは、腕を使うときだけ出す) */
+/** AgentARM の区分: 腕・呼び名・踊り・試す・ボードの Wi-Fi (呼び名・踊り・試すは、腕を使うときだけ出す) */
 @Composable
 internal fun ArmCards(g: McpGraph, a: SettingsActivity, tick: Int, say: (String) -> Unit) {
     val on = remember(tick) { g.settings.armEnabled }
@@ -49,7 +49,7 @@ internal fun ArmCards(g: McpGraph, a: SettingsActivity, tick: Int, say: (String)
         DanceCard(g, a, tick)
         ArmTryCard(g, say)
     }
-    UnoqWifiCard(g, tick)
+    BoardWifiCard(g, tick)
 }
 
 /** AgentARM (スマホを載せる腕): オン・オフ、許可、つながり、腕の様子、録画、記録 */
@@ -76,7 +76,7 @@ private fun ArmCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String) -
                 Line("腕", st.mode.ifBlank { "—" } + when (st.calibrated) { false -> " (較正がまだ)"; else -> "" }, if (st.mode == "fault") false else null)
                 Line("顔の追跡", if (st.following) "追っています" + (st.face?.let { (h, v) -> " (ずれ 横 ${h}° 縦 ${v}°)" } ?: " (顔が見えません)") else "していません", if (st.following) true else null)
             }
-            if (st.ready && st.version in 1..1) Line("腕のプログラム", "古い版です (動き・踊りには UNO Q の更新が要ります)", false)
+            if (st.ready && st.version in 1..1) Line("腕のプログラム", "古い版です (動き・踊りにはボードのプログラムの更新が要ります)", false)
             // 撮りながら顔を追う (前面カメラ。腕につながっていなければ撮るだけ)。撮り始めるボタンは「試す」にある
             Line("録画", if (st.recording) "撮っています (${if (st.recordingBack) "背面" else "前面"}。Movies/ENVOY に保存)" else "していません", if (st.recording) true else null)
             if (st.recording) Btn("録画を止める", true) { scope.armGo(say) { g.arm.recordStop() } }
@@ -144,7 +144,7 @@ private fun WakeCard(g: McpGraph) {
             Slider(value = th, onValueChange = { th = (it * 100).roundToInt() / 100f }, valueRange = 0.10f..0.90f, steps = 79,
                 onValueChangeFinished = { g.settings.wakeThreshold = th; g.arm.wakeSettingsChanged() })
         }
-        Note("UNO Q が「本人の『ねえ、リゲル』」とみなす声の近さです (最初は 0.58)。下げると反応しやすくなり、上げるとほかの人の声や似た言葉に反応しにくくなります。変えるとすぐ UNO Q に送ります (腕につながっているとき)。")
+        Note("ボードが「本人の『ねえ、リゲル』」とみなす声の近さです (最初は 0.58)。下げると反応しやすくなり、上げるとほかの人の声や似た言葉に反応しにくくなります。変えるとすぐボードに送ります (腕につながっているとき)。")
     }
 }
 
@@ -175,11 +175,11 @@ private fun DanceCard(g: McpGraph, a: SettingsActivity, tick: Int) {
 }
 
 /**
- * UNO Q の Wi-Fi (外に持ち出すとき、設定の画面から登録できるように)。腕との Bluetooth を通して、今のつながり・
+ * ボードの Wi-Fi (外に持ち出すとき、設定の画面から登録できるように)。腕との Bluetooth を通して、今のつながり・
  * 登録してあるもの・近くのものを見て、登録・接続・削除する。パスワードは暗号化して送り (WifiCrypto)、スマホには残さない
  */
 @Composable
-internal fun UnoqWifiCard(g: McpGraph, tick: Int) {
+internal fun BoardWifiCard(g: McpGraph, tick: Int) {
     val arm = g.arm
     val st by arm.status.collectAsState()
     val scope = rememberCoroutineScope()
@@ -196,9 +196,9 @@ internal fun UnoqWifiCard(g: McpGraph, tick: Int) {
     fun refresh() { scope.launch { busy = "読んでいます…"; cur = arm.wifi.status(); saved = arm.wifi.saved() ?: emptyList(); busy = "" } }
     LaunchedEffect(st.ready, tick) { if (arm.wifi.check() == null) refresh() }
     val now = cur?.optString("ssid").orEmpty()
-    Card("UNO Q の Wi-Fi", when { why != null -> "腕につながっていない"; cur == null -> ""; now.isBlank() -> "つながっていない"; else -> now },
+    Card("ボードの Wi-Fi", when { why != null -> "腕につながっていない"; cur == null -> ""; now.isBlank() -> "つながっていない"; else -> now },
         when { why != null -> null; cur == null -> null; else -> now.isNotBlank() }, icon = Icons.Rounded.Wifi) {
-        Note("UNO Q (腕) の Wi-Fi を、腕との Bluetooth を通して見る・登録します。外に持ち出すときは、Pixel のテザリングを登録しておくと、家の Wi-Fi が無い所では自動でつながります (電話の代役など、Wi-Fi を使う機能が外でも動きます。腕の動きと呼び名は Bluetooth なので Wi-Fi が無くても動きます)。パスワードは暗号化して送り、UNO Q の中だけに保存します。")
+        Note("腕のボードの Wi-Fi を、腕との Bluetooth を通して見る・登録します。外に持ち出すときは、Pixel のテザリングを登録しておくと、家の Wi-Fi が無い所では自動でつながります (電話の代役など、Wi-Fi を使う機能が外でも動きます。腕の動きと呼び名は Bluetooth なので Wi-Fi が無くても動きます)。パスワードは暗号化して送り、ボードの中だけに保存します。")
         if (why != null) { Line("使えません", why, false); return@Card }
         Line("今", cur?.let { c -> if (c.optString("ssid").isBlank()) "つながっていません" else "${c.optString("ssid")}  ${c.optString("ip")}  (強さ ${c.optInt("sig")})" } ?: "—",
             cur?.let { it.optString("ssid").isNotBlank() })
@@ -250,6 +250,6 @@ internal fun UnoqWifiCard(g: McpGraph, tick: Int) {
         }
         if (busy.isNotBlank()) Note(busy)
         if (said.isNotBlank()) Note(said)
-        Note("「Wi-Fi を変える許可がありません」と出たときだけ、UNO Q で一度 sudo sh ~/agentarm/linux/tools/wifi_permission.sh を動かしてください (今の UNO Q は、ユーザーが netdev のグループに入っているので要りません)。")
+        Note("「Wi-Fi を変える許可がありません」と出たときだけ、ボードで一度 sudo sh ~/agentarm/linux/tools/wifi_permission.sh を動かしてください (今のボードは、ユーザーが netdev のグループに入っているので要りません)。")
     }
 }

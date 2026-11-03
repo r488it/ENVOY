@@ -32,14 +32,14 @@ import kotlinx.coroutines.withContext
  *   画面がロック中・ChatGPT ともう話している (最初の一言を入れられない) ときは、voice でもボタンにする
  * - 本人が出ず選びもしないまま、設定の秒数 (rigelAutoAnswerSec) がたったら、設定でオンなら (rigelAutoAnswer) リゲルが代わりに出る
  *   (秒数は鳴り始めから数える)。オフなら、ASK_TIMEOUT_MS で選ばせるのをやめる (電話はそのまま鳴る)
- * - 代わりに出るなら、ChatGPT の音声モードを終えてから (声が通話に入らないように)、UNO Q に出てもらう (RigelCaller.answer)。
+ * - 代わりに出るなら、ChatGPT の音声モードを終えてから (声が通話に入らないように)、ボードに出てもらう (RigelCaller.answer)。
  *   終わったら ChatGPT の音声モードを開き、用件を整理して報告させる (RigelCaller の後片付け)
  * - どのアプリの着信か (電話・LINE) とかけてきた人は、着信の通知から読む (通知へのアクセスの許可が要る)。読めなければ、
  *   電話のアプリの着信の画面からユーザー補助で読む。番号しか出ていなければ「登録されていない番号（末尾 1234）」にする
- *   (電話番号の全体は ChatGPT にも UNO Q にも渡さない)
- * - 本人もリゲルも出ないまま鳴りやんだ着信は、引き継ぎ (CallNotes) に残す (次にリゲルをタップしたときに伝える)。
+ *   (電話番号の全体は ChatGPT にもボードにも渡さない)
+ * - 本人もリゲルも出ないまま鳴りやんだ着信は、お知らせ (Notices) に残す (次にリゲルをタップしたときに伝える)。
  *   代わりに出るかを選ばせない設定でも残す。かけてきた人を通知か画面から読めなかったものは、本物の着信か分からないので残さない
- * - 電話: UNO Q がハンズフリーでつないで ATA で出る。LINE: UNO Q がつないだら、通知の「応答」(無ければ画面の「応答」) を押し、
+ * - 電話: ボードがハンズフリーでつないで ATA で出る。LINE: ボードがつないだら、通知の「応答」(無ければ画面の「応答」) を押し、
  *   LINE の音の出入り口を「リゲル」にする (LineCaller.watch)
  * - 声で尋ねるとき、着信が鳴っている間は Android が通話の音の出口を受話口にする (そのままでは ChatGPT の声が聞こえない)。
  *   尋ねている間だけ、通話の音の出口をスピーカーにするよう頼む (Android が通話を優先して聞かないこともある)
@@ -96,7 +96,7 @@ class IncomingCall(private val g: McpGraph) {
         val at = System.currentTimeMillis()
         ringAt = at
         val how = g.settings.rigelIncoming
-        // 選ばせないときも、かけてきた人は読む (だれも出なかったら、引き継ぎに残す)
+        // 選ばせないときも、かけてきた人は読む (だれも出なかったら、お知らせに残す)
         val ask = how != "off" && !g.rigelCaller.busy
         RabiLog.i("incoming", "ringing (${if (ask) how else "no ask"})")
         val auto = g.settings.rigelAutoAnswer
@@ -129,13 +129,13 @@ class IncomingCall(private val g: McpGraph) {
                 g.releaseStuckRingMode()
             }
         }
-        // だれも出なかったら (本人もリゲルも)、引き継ぎに残す
+        // だれも出なかったら (本人もリゲルも)、お知らせに残す
         val at = ringAt
         g.scope.launch {
             delay(MISSED_CHECK_MS)
             if (ringAt != at || !identified || answered(at)) return@launch
             RabiLog.i("incoming", "missed ($app)")
-            g.callNotes.add("missed-$at", at, missedNote())
+            g.notices.add("missed-$at", at, missedNote())
         }
     }
 
@@ -145,7 +145,7 @@ class IncomingCall(private val g: McpGraph) {
             notice?.pkg?.let { RigelNotificationListener.instance?.ongoingCall(it) } == true ||
             (app == "line" && g.lineCaller.inCallScreen())
 
-    /** だれも出なかった着信の、引き継ぎの文 (電話番号の全体は入れない) */
+    /** だれも出なかった着信の、お知らせの文 (電話番号の全体は入れない) */
     private fun missedNote(): String {
         val via = if (app == "line") "LINE で" else ""
         val who = from.takeIf { it.isNotBlank() && it != UNKNOWN_PHONE && it != UNKNOWN_LINE }

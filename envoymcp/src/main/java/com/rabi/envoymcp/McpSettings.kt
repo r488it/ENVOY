@@ -153,8 +153,8 @@ class McpSettings(context: Context) {
         set(v) = p.edit { putBoolean("wake_greet", v) }
 
     /**
-     * 呼び名のしきい値 (UNO Q が「本人のリゲル」とみなす声の近さ。低いほど反応しやすく、ほかの人・似た言葉にも反応しやすい)。
-     * 腕に送り (obs voice の wth)、UNO Q の聞き取りがすぐ使う
+     * 呼び名のしきい値 (ボードが「本人のリゲル」とみなす声の近さ。低いほど反応しやすく、ほかの人・似た言葉にも反応しやすい)。
+     * 腕に送り (obs voice の wth)、ボードの聞き取りがすぐ使う
      */
     var wakeThreshold: Float
         get() = p.getFloat("wake_threshold", 0.58f)

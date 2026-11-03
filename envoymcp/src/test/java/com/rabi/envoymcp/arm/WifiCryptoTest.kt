@@ -4,17 +4,17 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** UNO Q (agentarm/linux/tests/test_wifi.py の test_known_vector_for_the_phone) と同じ答えになるか */
+/** 腕のボードのプログラム (agentarm/linux/tests/test_wifi.py の test_known_vector_for_the_phone) と同じ答えになるか */
 class WifiCryptoTest {
     private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
 
-    @Test fun sameAsUnoQ() {
+    @Test fun sameAsBoard() {
         val phone = WifiCrypto.keyOf(ByteArray(32) { (it + 1).toByte() })
-        val unoq = WifiCrypto.keyOf(ByteArray(32) { (it + 33).toByte() })
+        val board = WifiCrypto.keyOf(ByteArray(32) { (it + 33).toByte() })
         assertEquals("07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c", hex(phone.public))
-        val shared = WifiCrypto.agree(phone.secret, unoq.public)!!
-        assertArrayEquals(shared, WifiCrypto.agree(unoq.secret, phone.public))
-        val (kEnc, kMac) = WifiCrypto.sessionKeys(shared, phone.public, unoq.public)
+        val shared = WifiCrypto.agree(phone.secret, board.public)!!
+        assertArrayEquals(shared, WifiCrypto.agree(board.secret, phone.public))
+        val (kEnc, kMac) = WifiCrypto.sessionKeys(shared, phone.public, board.public)
         val (ct, tag) = WifiCrypto.encrypt(kEnc, kMac, "w7", "Pixel 10", "secret-pass", ByteArray(12))
         assertEquals("930fcee0c89c77699c22aaeb51008a340286666bcc2e0ef7d41f81", hex(ct + tag))
     }

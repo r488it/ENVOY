@@ -19,15 +19,15 @@ import java.net.Socket
 
 /**
  * リゲルが代わりに電話して用件を伝える (ChatGPT に「〇〇に電話して XX と伝えて」と頼む)。
- * UNO Q の常駐 (callservice.py、TCP 8093) に頼み、UNO Q がヘッドセット「リゲル」として
- * Pixel とつながったら (ready)、place で発信する (電話: 本人が承認した番号に ENVOY MCP がかける。番号は UNO Q に送らない。
- * LINE: LINE を操作して発信し、音の出入り口を「リゲル」にする)。通話は UNO Q の Gemini 3.8 Live が受け持つ。
- * 結果 (伝わったか・相手の返事の要点・やり取り) は UNO Q から届き、rigel_call_status で返す。1 度に 1 本
+ * ボードの常駐 (callservice.py、TCP 8093) に頼み、ボードがヘッドセット「リゲル」として
+ * Pixel とつながったら (ready)、place で発信する (電話: 本人が承認した番号に ENVOY MCP がかける。番号はボードに送らない。
+ * LINE: LINE を操作して発信し、音の出入り口を「リゲル」にする)。通話はボードの Gemini 3.8 Live が受け持つ。
+ * 結果 (伝わったか・相手の返事の要点・やり取り) はボードから届き、rigel_call_status で返す。1 度に 1 本
  * - 電話の間は、電話のアプリの画面の電話番号をモザイクで隠す (NumberMask。設定でオンのときだけ。最初はオフ)。電話のあとは、リゲルの画面に戻す (VoiceStage)
  * - ChatGPT の音声モードから頼まれたら、電話をかける前に音声モードを終え (話すと声が通話の音に入る)、電話のあとに開き直して、
  *   最初の一言で結果を送り、ChatGPT から本人に報告してもらう
- * - 通話の間は、リゲルと相手のやり取りを文字で画面に出し (CallScreen。UNO Q が言葉を届くたびに送る)、終わったら記録に残す
- *   (CallRecords)。設定で録音がオンなら、UNO Q が録った通話の音も結果の直前に届くので、一緒に残す (相手には伝えない)
+ * - 通話の間は、リゲルと相手のやり取りを文字で画面に出し (CallScreen。ボードが言葉を届くたびに送る)、終わったら記録に残す
+ *   (CallRecords)。設定で録音がオンなら、ボードが録った通話の音も結果の直前に届くので、一緒に残す (相手には伝えない)
  */
 class RigelCaller(private val g: McpGraph) {
     @Volatile private var job: Job? = null
@@ -48,28 +48,28 @@ class RigelCaller(private val g: McpGraph) {
     private val _live = MutableStateFlow<CallInfo?>(null)
     /** いまの (最後の) 代行の通話: 相手・様子・やり取り (CallScreen が出す) */
     val live: StateFlow<CallInfo?> = _live
-    /** UNO Q から届いている録音 (届き終えたら recReady) */
+    /** ボードから届いている録音 (届き終えたら recReady) */
     private var recFile: File? = null
     private var recOut: OutputStream? = null
     @Volatile private var recReady = false
     @Volatile private var recRate = 8_000
 
     /**
-     * 頼む。UNO Q が ready になったら place() で発信する (失敗なら理由を返す)。end() は、Gemini が電話を切ると言ったとき (LINE: 通話を終える)、
+     * 頼む。ボードが ready になったら place() で発信する (失敗なら理由を返す)。end() は、Gemini が電話を切ると言ったとき (LINE: 通話を終える)、
      * watch(send) は、発信のあと通話を見張り、相手が出たら send("answered")、終わったら send("ended") を呼ぶ。
      * 返すのは、始められなければ理由 (始められたら null。結果はあとで state・result)
      */
     suspend fun start(app: String, to: String, message: String, caller: String,
                       place: suspend () -> String?, end: suspend () -> Unit = {}, watch: (suspend ((String) -> Unit) -> Unit)? = null): String? {
         if (busy) return "ほかの電話をしています (rigel_call_status で様子が分かります)"
-        val ip = g.arm.armIp ?: return "UNO Q (腕) につながっていないので、電話できません。腕の電源とつながりを確かめてください"
+        val ip = g.arm.armIp ?: return "腕のボードにつながっていないので、電話できません。腕の電源とつながりを確かめてください"
         this.app = app; this.to = to; result = null; state = "preparing"; startedAt = System.currentTimeMillis()
         incoming = false
         begin(CallInfo(CallInfo.newId(startedAt), "out", app, to, message = message, startedAt = startedAt))
         g.voiceStage.holdForRigelCall()
         if (app == "phone" && g.settings.numberMask) g.numberMask.start()
         endedVoice = false
-        // ChatGPT の音声モードを終える (UNO Q が Pixel につなぐ間に)。電話をかける前に終わるのを待つ
+        // ChatGPT の音声モードを終える (ボードが Pixel につなぐ間に)。電話をかける前に終わるのを待つ
         val voiceEnd = if (app == "phone") g.scope.async(Dispatchers.IO) { runCatching { g.endChatGptVoiceForCall() }.getOrDefault(false) } else null
         val ready = CompletableDeferred<String?>()
         job = g.scope.launch(Dispatchers.IO) {
@@ -79,19 +79,19 @@ class RigelCaller(private val g: McpGraph) {
                     ready, { if (voiceEnd?.await() == true) endedVoice = true; place() }, end, watch)
             } catch (e: Exception) {
                 RabiLog.w("rigelcall", "session failed: ${e.javaClass.simpleName} ${e.message.orEmpty()}")
-                if (!ready.isCompleted) ready.complete("UNO Q の電話の代役につながりません (${e.javaClass.simpleName})")
+                if (!ready.isCompleted) ready.complete("ボードの電話の代役につながりません (${e.javaClass.simpleName})")
                 if (result == null) finish(JSONObject().put("outcome", "failed").put("reason", e.javaClass.simpleName))
             } finally {
                 out = null
                 dropRecording()
                 g.callScreen.hideAfter()
-                if (!ready.isCompleted) ready.complete("UNO Q の電話の代役が途中で終わりました")
+                if (!ready.isCompleted) ready.complete("ボードの電話の代役が途中で終わりました")
             }
         }
         // ready の中身は、うまくいけば null (理由なし)。時間切れと取り違えないよう、箱に入れて待つ
-        // (取り違えると、発信できたのに UNO Q に「やめて」と送ってしまい、音が「リゲル」に来ない)
+        // (取り違えると、発信できたのにボードに「やめて」と送ってしまい、音が「リゲル」に来ない)
         val got = withTimeoutOrNull(READY_TIMEOUT_MS) { listOf(ready.await()) }
-        val err = if (got == null) "UNO Q の用意 (ヘッドセットとしてつなぐ) が間に合いませんでした" else got[0]
+        val err = if (got == null) "ボードの用意 (ヘッドセットとしてつなぐ) が間に合いませんでした" else got[0]
         if (err != null) {
             hangup(); job?.cancel(); state = "failed"
             if (voiceEnd?.await() == true) endedVoice = true
@@ -101,16 +101,16 @@ class RigelCaller(private val g: McpGraph) {
     }
 
     /**
-     * かかってきた電話に、リゲルが代わりに出る (IncomingCall から)。UNO Q が Pixel にハンズフリーでつなぎ、
+     * かかってきた電話に、リゲルが代わりに出る (IncomingCall から)。ボードが Pixel にハンズフリーでつなぎ、
      * 「着信中」を見て ATA で出る。Gemini がすぐ名乗って用件を聞き、end_call で切る。終わったら、設定でオンなら ChatGPT の音声モードを開いて報告させる
      * (rigelIncomingReport。最初はオフ: 通話の記録に残すだけ)。
      * from はかけてきた人 (名前か「登録されていない番号（末尾 1234）」。番号の全体は送らない)。返すのは、出られなければ理由。
-     * LINE (app = line): UNO Q がつないだら (ready) place で「応答」を押し、watch が音の出入り口を「リゲル」にする。切るのは end
+     * LINE (app = line): ボードがつないだら (ready) place で「応答」を押し、watch が音の出入り口を「リゲル」にする。切るのは end
      */
     suspend fun answer(from: String, caller: String, app: String = "phone", place: suspend () -> String? = { null },
                        end: suspend () -> Unit = {}, watch: (suspend ((String) -> Unit) -> Unit)? = null): String? {
         if (busy) return "ほかの電話をしています"
-        val ip = g.arm.armIp ?: return "UNO Q (腕) につながっていないので、代わりに出られません"
+        val ip = g.arm.armIp ?: return "腕のボードにつながっていないので、代わりに出られません"
         this.app = app; to = from; result = null; state = "preparing"; startedAt = System.currentTimeMillis()
         incoming = true
         begin(CallInfo(CallInfo.newId(startedAt), "in", app, from, startedAt = startedAt))
@@ -125,17 +125,17 @@ class RigelCaller(private val g: McpGraph) {
                     ready, place, end, watch ?: { send -> watchPhone(send) })
             } catch (e: Exception) {
                 RabiLog.w("rigelcall", "answer session failed: ${e.javaClass.simpleName} ${e.message.orEmpty()}")
-                if (!ready.isCompleted) ready.complete("UNO Q の電話の代役につながりません (${e.javaClass.simpleName})")
+                if (!ready.isCompleted) ready.complete("ボードの電話の代役につながりません (${e.javaClass.simpleName})")
                 if (result == null) finish(JSONObject().put("outcome", "failed").put("reason", e.javaClass.simpleName))
             } finally {
                 out = null
                 dropRecording()
                 g.callScreen.hideAfter()
-                if (!ready.isCompleted) ready.complete("UNO Q の電話の代役が途中で終わりました")
+                if (!ready.isCompleted) ready.complete("ボードの電話の代役が途中で終わりました")
             }
         }
         val got = withTimeoutOrNull(ANSWER_TIMEOUT_MS) { listOf(ready.await()) }
-        val err = if (got == null) "UNO Q が電話に出るのが間に合いませんでした" else got[0]
+        val err = if (got == null) "ボードが電話に出るのが間に合いませんでした" else got[0]
         if (err != null) {
             hangup(); job?.cancel(); state = "failed"
             if (result == null) cleanUp(JSONObject().put("outcome", "failed").put("reason", err))
@@ -143,7 +143,7 @@ class RigelCaller(private val g: McpGraph) {
         return err
     }
 
-    /** 途中でやめる (UNO Q が切る) */
+    /** 途中でやめる (ボードが切る) */
     fun hangup() {
         g.scope.launch(Dispatchers.IO) { send(JSONObject().put("cmd", "hangup")) }
     }
@@ -161,11 +161,11 @@ class RigelCaller(private val g: McpGraph) {
                 val line = rd.readLine() ?: break
                 val ev = runCatching { JSONObject(line) }.getOrNull() ?: continue
                 when (ev.optString("event")) {
-                    "hello" -> if (ev.optBoolean("busy")) { ready.complete("UNO Q はほかの電話をしています"); return }
+                    "hello" -> if (ev.optBoolean("busy")) { ready.complete("ボードはほかの電話をしています"); return }
                     "error" -> {
                         val reason = ev.optString("reason")
                         RabiLog.w("rigelcall", "uno error: $reason")
-                        if (!ready.isCompleted) { ready.complete("UNO Q: $reason"); return }
+                        if (!ready.isCompleted) { ready.complete("ボード: $reason"); return }
                     }
                     "status" -> {
                         val st = ev.optString("state")
@@ -205,13 +205,13 @@ class RigelCaller(private val g: McpGraph) {
                 }
             }
             watcher?.cancel()
-            if (result == null) finish(JSONObject().put("outcome", "failed").put("reason", "UNO Q とのつながりが切れました"))
+            if (result == null) finish(JSONObject().put("outcome", "failed").put("reason", "ボードとのつながりが切れました"))
         }
     }
 
     /**
      * 電話の状態を ADB (dumpsys telephony.registry の PreciseCallState) で見て、相手が出たら answered、切れたら ended を送る。
-     * UNO Q は、Pixel が送る通話の一覧 (+CLCC) の番号が空だと通話の状態を読めない (相手が出たのが分からず、最初の「もしもし」を聞き逃す)
+     * ボードは、Pixel が送る通話の一覧 (+CLCC) の番号が空だと通話の状態を読めない (相手が出たのが分からず、最初の「もしもし」を聞き逃す)
      */
     suspend fun watchPhone(send: (String) -> Unit) {
         if (!g.adb.isConnected && g.adb.paired) runCatching { g.adb.ensureConnected() }
@@ -234,7 +234,7 @@ class RigelCaller(private val g: McpGraph) {
 
     /**
      * 電話が終わった: 番号を隠すのをやめ (少し残す)、リゲルの画面に戻す (音声モードを終えていたら、結果を添えて開き直す)。
-     * 本人に報告しないとき・開き直せなかったときは、結果を引き継ぎ (CallNotes) に残す (次にリゲルをタップしたときに伝える)
+     * 本人に報告しないとき・開き直せなかったときは、結果をお知らせ (Notices) に残す (次にリゲルをタップしたときに伝える)
      */
     private fun cleanUp(ev: JSONObject?) {
         g.numberMask.stopAfter()
@@ -242,10 +242,10 @@ class RigelCaller(private val g: McpGraph) {
         if (incoming) {
             incoming = false
             endedVoice = false
-            // 出られなかった: 本人が出られるよう、何もしない (だれも出なければ、IncomingCall が引き継ぎに残す)
+            // 出られなかった: 本人が出られるよう、何もしない (だれも出なければ、IncomingCall がお知らせに残す)
             if (ev?.optString("outcome") == "failed") { g.voiceStage.afterRigelCall(); return }
             val keep = keeper(c, noteIncoming(ev))
-            if (!g.settings.rigelIncomingReport) { g.voiceStage.afterRigelCall(); keep(); return }          // ChatGPT は開かない (通話の記録と引き継ぎに残す)
+            if (!g.settings.rigelIncomingReport) { g.voiceStage.afterRigelCall(); keep(); return }          // ChatGPT は開かない (通話の記録とお知らせに残す)
             g.voiceStage.releaseHold()
             g.reopenVoiceAfterCall(reportIncoming(ev), onSkip = keep)
             return
@@ -262,13 +262,13 @@ class RigelCaller(private val g: McpGraph) {
         }
     }
 
-    /** 引き継ぎに残す (呼んだとき) */
-    private fun keeper(c: CallInfo?, text: String): () -> Unit = { if (c != null) g.callNotes.add(c.id, c.startedAt, text) }
+    /** お知らせに残す (呼んだとき) */
+    private fun keeper(c: CallInfo?, text: String): () -> Unit = { if (c != null) g.notices.add(c.id, c.startedAt, text) }
 
-    /** 結果を AI が受け取った (rigel_call_status): 本人にはその AI が伝えるので、引き継ぎからは消す */
+    /** 結果を AI が受け取った (rigel_call_status): 本人にはその AI が伝えるので、お知らせからは消す */
     fun resultDelivered() {
         if (result == null) return
-        _live.value?.let { g.callNotes.remove(listOf(it.id)) }
+        _live.value?.let { g.notices.remove(listOf(it.id)) }
     }
 
     /** ChatGPT に送る電話の結果 (開き直した音声モードの最初の一言)。電話番号は入れない */
@@ -280,7 +280,7 @@ class RigelCaller(private val g: McpGraph) {
         "（リゲルが代わりに電話に出ました）${to}からの電話: ${outcomeIncoming(ev)}。" + summary(ev, "内容") +
             "この内容を、私に分かりやすく整理して、短く声で伝えてください。"
 
-    /** 引き継ぎに残す文 (かけた電話・かかってきた電話) */
+    /** お知らせに残す文 (かけた電話・かかってきた電話) */
     private fun note(ev: JSONObject?): String = "リゲルが${to}に電話しました: ${outcome(ev)}。" + summary(ev, "要点")
     private fun noteIncoming(ev: JSONObject?): String = "リゲルが代わりに${to}からの電話に出ました: ${outcomeIncoming(ev)}。" + summary(ev, "内容")
 
@@ -341,7 +341,7 @@ class RigelCaller(private val g: McpGraph) {
         _live.value = c
     }
 
-    /** UNO Q の様子が変わった: 相手が出たら、そこから時間を数える */
+    /** ボードの様子が変わった: 相手が出たら、そこから時間を数える */
     private fun onState(st: String) {
         val c = _live.value ?: return
         _live.value = if (st == "talking" && c.answeredAt == 0L) c.copy(state = st, answeredAt = System.currentTimeMillis()) else c.copy(state = st)
@@ -379,9 +379,9 @@ class RigelCaller(private val g: McpGraph) {
 
     private companion object {
         const val PORT = 8093
-        /** UNO Q がドングルを入れて Pixel とつなぐまで (と、本人の承認のあと発信するまで) 待つ長さ */
+        /** ボードがドングルを入れて Pixel とつなぐまで (と、本人の承認のあと発信するまで) 待つ長さ */
         const val READY_TIMEOUT_MS = 60_000L
-        /** かかってきた電話に UNO Q が出るまで待つ長さ (つないで「着信中」を見て ATA。鳴っている間に) */
+        /** かかってきた電話にボードが出るまで待つ長さ (つないで「着信中」を見て ATA。鳴っている間に) */
         const val ANSWER_TIMEOUT_MS = 20_000L
         /** 電話の状態を見る間隔と、見続ける長さ */
         const val WATCH_POLL_MS = 400L

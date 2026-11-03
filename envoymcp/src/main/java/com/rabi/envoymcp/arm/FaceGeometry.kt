@@ -5,7 +5,7 @@ import kotlin.math.atan2
 import kotlin.math.sqrt
 
 /**
- * 顔の向きを、AgentARM の定義の (h, v) にする (UNO Q 側の agentarm_d/geometry.py の face_errors と同じ)。
+ * 顔の向きを、AgentARM の定義の (h, v) にする (ボード側の agentarm_d/geometry.py の face_errors と同じ)。
  * - h: 顔の方位 − 画面の正面の方位 (度)。上から見て反時計回りが + (使う人から見て画面の右の側にいる顔は +)
  * - v: 顔の仰角 − 画面の正面の仰角 (度)。上が +
  * 腕はこれを受けて、旋回 = q1 + h、肩 = q2 − v を目標にする。

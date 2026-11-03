@@ -8,7 +8,7 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * UNO Q の Wi-Fi を、腕との BLE を通して見る・登録する・つなぐ・消す (設定の画面から)。
+ * ボードの Wi-Fi を、腕との BLE を通して見る・登録する・つなぐ・消す (設定の画面から)。
  * パスワードは鍵を交換してから暗号化して送る (WifiCrypto)。version は腕のプログラムの版 (hello の v)
  */
 class ArmWifi(private val link: ArmLink, private val version: () -> Int) {
@@ -17,10 +17,10 @@ class ArmWifi(private val link: ArmLink, private val version: () -> Int) {
     private val netWaits = ConcurrentHashMap<String, NetWait>()
     private var netN = 0
 
-    /** UNO Q の Wi-Fi を扱えるか (つながっていて、腕のプログラムが 7 以降)。だめなら理由 */
+    /** ボードの Wi-Fi を扱えるか (つながっていて、腕のプログラムが 7 以降)。だめなら理由 */
     fun check(): String? = when {
-        !link.ready -> "腕 (UNO Q) につながっていません"
-        version() < 7 -> "UNO Q のプログラムが古いので使えません (agentarm-d を更新してください)"
+        !link.ready -> "腕のボードにつながっていません"
+        version() < 7 -> "ボードのプログラムが古いので使えません (agentarm-d を更新してください)"
         else -> null
     }
 
@@ -69,7 +69,7 @@ class ArmWifi(private val link: ArmLink, private val version: () -> Int) {
         if (sec == "open") return result(ask("add", JSONObject().put("ssid", ssid).put("sec", sec)))
         val mine = WifiCrypto.newKey()
         val key = ask("key", JSONObject().put("pub", b64(mine.public)))?.firstOrNull()
-            ?: return false to "UNO Q から返事がありません"
+            ?: return false to "ボードから返事がありません"
         val theirs = runCatching { Base64.decode(key.optString("pub"), Base64.NO_WRAP) }.getOrNull()
         val shared = theirs?.let { WifiCrypto.agree(mine.secret, it) } ?: return false to "鍵を交換できませんでした"
         val (kEnc, kMac) = WifiCrypto.sessionKeys(shared, mine.public, theirs)
@@ -83,14 +83,14 @@ class ArmWifi(private val link: ArmLink, private val version: () -> Int) {
     }
 
     private fun result(r: List<JSONObject>?): Pair<Boolean, String> {
-        val m = r?.firstOrNull() ?: return false to "UNO Q から返事がありません"
+        val m = r?.firstOrNull() ?: return false to "ボードから返事がありません"
         return m.optBoolean("ok") to m.optString("msg")
     }
 
     private fun b64(b: ByteArray) = Base64.encodeToString(b, Base64.NO_WRAP)
 
     companion object {
-        /** UNO Q の Wi-Fi の返事を待つ長さ (探す・つなぐ・登録は nmcli が遅いので長め) */
+        /** ボードの Wi-Fi の返事を待つ長さ (探す・つなぐ・登録は nmcli が遅いので長め) */
         private const val NET_TIMEOUT_MS = 10_000L
         private const val NET_SCAN_TIMEOUT_MS = 30_000L
     }

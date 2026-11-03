@@ -61,7 +61,7 @@ private fun CallerCard(g: McpGraph, tick: Int) {
             singleLine = true, modifier = Modifier.fillMaxWidth())
         if (rcInfo.isNotBlank()) Line("リゲルの電話", rcInfo, if (rc.busy) true else null)
         if (rc.busy) Btn("リゲルの電話をやめる") { rc.hangup() }
-        Note("ChatGPT に「〇〇さんに電話して、XX と伝えて」と頼むと、承認 (相手と用件) のあと、リゲル (Gemini 3.8 Live、UNO Q で動く) が電話をかけ、AI だと名乗って用件を伝え、返事を聞いて切ります。結果は ChatGPT が rigel_call_status で受け取ります。UNO Q (腕) につながっていて、UNO Q で電話の代役 (rigel-call) が動いている必要があります。相手の声は Google に送られます。")
+        Note("ChatGPT に「〇〇さんに電話して、XX と伝えて」と頼むと、承認 (相手と用件) のあと、リゲル (Gemini 3.8 Live、ボードで動く) が電話をかけ、AI だと名乗って用件を伝え、返事を聞いて切ります。結果は ChatGPT が rigel_call_status で受け取ります。腕のボードにつながっていて、ボードで電話の代役 (rigel-call) が動いている必要があります。相手の声は Google に送られます。")
         var mask by remember { mutableStateOf(g.settings.numberMask) }
         Toggle("電話の画面の番号をモザイクで隠す", mask) { g.settings.numberMask = it; mask = it }
         Note("リゲルが代わりに電話している間、電話のアプリの画面に出る番号の上にモザイクを重ねます。代行中はリゲルの通話の画面で覆うので、ふだんはオフで構いません (通話の画面が出せないとき・録画で電話の画面を映すとき用)。")
@@ -94,7 +94,7 @@ private fun IncomingCard(g: McpGraph) {
         Note("自分で出ず、「リゲルが代わりに出る」「自分で出る」も選ばないまま決めた秒数がたったら、リゲルが代わりに出ます (上で「しない」を選んでいるときは出ません)。留守番電話につながると出られないので、留守番電話より短くしてください。")
         var report by remember { mutableStateOf(g.settings.rigelIncomingReport) }
         Toggle("出たあと、ChatGPT の音声モードを開いて用件を伝える", report) { g.settings.rigelIncomingReport = it; report = it }
-        Note("リゲルが出ると、AI だと名乗って相手の名前・用件・折り返しの要否を聞き、切ります。上のスイッチがオンなら、終わったら ChatGPT の音声モードが開いて、用件を整理して伝えます (オフなら通話の記録に残すだけ)。電話と LINE の着信に出ます (どのアプリの着信か・かけてきた人は、着信の通知から読みます。「通知へのアクセス」の許可が要ります)。ユーザー補助がオンで、UNO Q で電話の代役が動いている必要があります。")
+        Note("リゲルが出ると、AI だと名乗って相手の名前・用件・折り返しの要否を聞き、切ります。上のスイッチがオンなら、終わったら ChatGPT の音声モードが開いて、用件を整理して伝えます (オフなら通話の記録に残すだけ)。電話と LINE の着信に出ます (どのアプリの着信か・かけてきた人は、着信の通知から読みます。「通知へのアクセス」の許可が要ります)。ユーザー補助がオンで、ボードで電話の代役が動いている必要があります。")
     }
 }
 

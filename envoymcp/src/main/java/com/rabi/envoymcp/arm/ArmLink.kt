@@ -33,12 +33,12 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * AgentARM (UNO Q) との BLE (UNO Q 側は agentarm_d/transports/ble.py)。
+ * AgentARM のボードとの BLE (ボード側は agentarm_d/transports/ble.py)。
  * - 探す → つなぐ → MTU 247 → 知らせ (state: Notify、event: Indicate) を受け取る → hello → 0.5 秒ごとに hb
  * - 命令 (cmd) は応答ありで、観測 (obs) と hb は応答なしで書く。GATT の操作は 1 つずつ (列に並べる)
  * - 切れたら、前につないだ AgentARM に自動接続で戻る (画面が消えていても、裏にいても戻れる)。30 秒で戻れなければ探し直す
  * - 腕からの知らせ (state、10 回/秒) が 5 秒来なければ、つながりが古くなったとみて、つなぎ直す
- *   (UNO Q のプログラムを起動し直すと、Bluetooth はつながったまま中身だけ替わり、送ったものが届かなくなるため)
+ *   (ボードのプログラムを起動し直すと、Bluetooth はつながったまま中身だけ替わり、送ったものが届かなくなるため)
  * 中身は 1 行の JSON (200 B 以内)。
  * つないだ AgentARM を覚えておき、次に動かすときは探さずに自動接続で待つ (画面が消えていても戻れるように。広告を絞らずに探すのは、画面が消えていると止められる)。
  */
@@ -209,7 +209,7 @@ class ArmLink(
         gatt = device.connectGatt(context, auto, gattCb, BluetoothDevice.TRANSPORT_LE)
     }
 
-    /** Android が覚えている GATT の中身を捨てる (UNO Q 側で作り直されたとき、古い中身に書かないように) */
+    /** Android が覚えている GATT の中身を捨てる (ボード側で作り直されたとき、古い中身に書かないように) */
     private fun refreshCache(g: BluetoothGatt) {
         runCatching { g.javaClass.getMethod("refresh").invoke(g) }
     }
