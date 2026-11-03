@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 前景は 3D アバターの描画から作った画像 (正面を向いた光る球)。単色はテーマアイコン用 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/rabi_bg" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_mono" />
+</adaptive-icon>

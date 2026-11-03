@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ENVOY MCP のユーザー補助 (端末の操作の方式が「ユーザー補助」を含むときに使う)。
+  画面の部品を読む・指の動きを送る・画面の画像を取る・戻る/ホームなどの全体の操作。
+  知らせはすべて受け取る (typeAllMask)。使うのは前面の画面の切り替わり (TYPE_WINDOW_STATE_CHANGED) だけで、ほかは捨てる (中身は記録しない)。
+  受け取らないと、部品の木の控え (キャッシュ) が更新されず、あとから出た部品 (自動字幕起こしのスイッチなど) が読めない
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/a11y_description"
+    android:notificationTimeout="100" />

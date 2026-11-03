@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "id": "app.clock.alarms",
+  "name": "目覚ましの一覧",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "時計アプリのアラーム (目覚まし) の一覧を開く",
+  "examples": [
+    "目覚ましを見せて",
+    "アラームを確認したい",
+    "何時に起こしてくれるんだっけ",
+    "アラームの画面"
+  ],
+  "args": [],
+  "app": {
+    "package": "com.google.android.deskclock",
+    "label": "時計",
+    "alternatives": [
+      "com.android.deskclock",
+      "com.sec.android.app.clockpackage"
+    ]
+  },
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "open",
+      "op": "intent",
+      "intent": {
+        "action": "android.intent.action.SHOW_ALARMS"
+      },
+      "expect": {
+        "package": "{app.package}",
+        "timeout_ms": 6000
+      }
+    }
+  ],
+  "success": {
+    "package": "{app.package}",
+    "timeout_ms": 3000
+  },
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "目覚ましの一覧を開きますね",
+  "say_done": "目覚ましの一覧を開きました"
+}

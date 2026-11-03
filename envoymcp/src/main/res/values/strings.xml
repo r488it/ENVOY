@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ENVOY MCP</string>
+    <string name="settings_title">ENVOY MCP の設定</string>
+    <string name="channel_server">MCP サーバー</string>
+    <string name="channel_alert">お知らせ</string>
+    <string name="a11y_label">ENVOY MCP (端末の操作)</string>
+    <string name="a11y_description">ChatGPT から ENVOY MCP に頼まれたときに、この端末の画面を読み、タップ・文字入力・戻るなどの操作をします。ENVOY MCP の設定で「端末の操作の方式」をユーザー補助にしたときに使います。送信・投稿・購入などの確定は、承認画面で本人が承認してから押します。</string>
+</resources>

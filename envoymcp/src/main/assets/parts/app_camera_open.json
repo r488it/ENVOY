@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "id": "app.camera.photo",
+  "name": "写真を撮る準備",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "カメラを写真モードで開くだけ (撮るのは本人。撮ってほしいときは「写真を撮る」の部品)",
+  "examples": [
+    "カメラにして",
+    "カメラを起動して",
+    "カメラを開いて"
+  ],
+  "args": [],
+  "app": null,
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "open",
+      "op": "intent",
+      "intent": {
+        "action": "android.media.action.STILL_IMAGE_CAMERA"
+      },
+      "expect": {
+        "none_text": [
+          "このアプリでは",
+          "見つかりません"
+        ],
+        "timeout_ms": 5000
+      }
+    }
+  ],
+  "success": null,
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "カメラを用意しますね",
+  "say_done": "カメラを用意しました"
+}

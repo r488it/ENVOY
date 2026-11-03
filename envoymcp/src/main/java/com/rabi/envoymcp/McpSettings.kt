@@ -1,0 +1,243 @@
+package com.rabi.envoymcp
+
+import android.content.Context
+import java.security.SecureRandom
+
+/** ENVOY MCP の設定 (この端末の中だけ) */
+class McpSettings(context: Context) {
+    private val p = context.getSharedPreferences("envoymcp", Context.MODE_PRIVATE)
+
+    /** MCP サーバーを動かすか。本人が設定の画面でオンにしたときだけ動く (最初はオフ) */
+    var serverEnabled: Boolean
+        get() = p.getBoolean("server_enabled", false)
+        set(v) = p.edit().putBoolean("server_enabled", v).apply()
+
+    /** 待ち受けるポート (127.0.0.1 だけ) */
+    var port: Int
+        get() = p.getInt("port", DEFAULT_PORT)
+        set(v) = p.edit().putInt("port", v).apply()
+
+    /** 合言葉 (Authorization: Bearer)。同じ端末の他のアプリから勝手に使われないように */
+    val token: String
+        get() = p.getString("token", null) ?: newToken()
+
+    fun newToken(): String {
+        val r = SecureRandom()
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+        val t = (1..TOKEN_LENGTH).map { chars[r.nextInt(chars.length)] }.joinToString("")
+        p.edit().putString("token", t).apply()
+        return t
+    }
+
+    /** スマホの中で tunnel-client を動かすか (本人が設定でオンにしたときだけ。MCP サーバーが動いているときだけ動く) */
+    var tunnelEnabled: Boolean
+        get() = p.getBoolean("tunnel_enabled", false)
+        set(v) = p.edit().putBoolean("tunnel_enabled", v).apply()
+
+    /** つなぐトンネル (Platform のトンネル設定の tunnel_...)。秘密ではない。実行用キーは SecureStore に別に置く */
+    var tunnelId: String
+        get() = p.getString("tunnel_id", "") ?: ""
+        set(v) = p.edit().putString("tunnel_id", v).apply()
+
+    /**
+     * 確定 (送信・投稿など) の前に、指紋などの本人確認をするか (最初はオン)。
+     * 承認画面を出すか (approvalScreen) と組み合わせる
+     */
+    var approvalBiometric: Boolean
+        get() = p.getBoolean("approval_biometric", true)
+        set(v) = p.edit().putBoolean("approval_biometric", v).apply()
+
+    /**
+     * 確定の前に承認画面 (内容を見て「確認して実行」) を出すか (最初はオフ: 指紋などだけで承認する)。
+     * 本人確認と組み合わせる: 画面オン・確認オン = 画面のあと指紋など / 画面オフ・確認オン = 確定しようとしている画面のまま指紋など /
+     * 画面オン・確認オフ = 画面で「確認して実行」 / 画面オフ・確認オフ = 承認なしでそのまま確定
+     */
+    var approvalScreen: Boolean
+        get() = p.getBoolean("approval_screen", false)
+        set(v) = p.edit().putBoolean("approval_screen", v).apply()
+
+    /** 端末の操作の方式 (最初は ADB のみ) */
+    var controlMode: ControlMode
+        get() = ControlMode.entries.firstOrNull { it.id == p.getString("control_mode", null) } ?: ControlMode.ADB
+        set(v) = p.edit().putString("control_mode", v.id).apply()
+
+    /** 画面の画像を ChatGPT に渡してよいか (最初はオン。設定で切れる) */
+    var allowScreenshots: Boolean
+        get() = p.getBoolean("allow_screenshots", true)
+        set(v) = p.edit().putBoolean("allow_screenshots", v).apply()
+
+    /** ChatGPT の音声モードの真ん中に、リゲルを重ねる */
+    var voiceStage: Boolean
+        get() = p.getBoolean("voice_stage", true)
+        set(v) = p.edit().putBoolean("voice_stage", v).apply()
+
+    /**
+     * リゲルのタップで開いた音声モードに、最初の一言 (この会話では ENVOY MCP を使う、と伝える文) を文字で送る
+     * (最初はオン。ユーザー補助が要る)
+     */
+    var voicePrimer: Boolean
+        get() = p.getBoolean("voice_primer", true)
+        set(v) = p.edit().putBoolean("voice_primer", v).apply()
+
+    /** 最初の一言の文 (空にすると送らない) */
+    var voicePrimerText: String
+        get() = p.getString("voice_primer_text", null) ?: VoicePrimer.DEFAULT_TEXT
+        set(v) = p.edit().putString("voice_primer_text", v).apply()
+
+    /**
+     * モニター (PC モード) につないだら、モニターに全画面のリゲルを出し、ChatGPT の道具の操作先をモニターにする
+     * (最初はオン)
+     */
+    var monitorStage: Boolean
+        get() = p.getBoolean("monitor_stage", true)
+        set(v) = p.edit().putBoolean("monitor_stage", v).apply()
+
+    /** 重ねたリゲルを ChatGPT の声に合わせて動かす (試験。端末の出力の波形を読むため、マイクの許可が要る。最初はオフ) */
+    var voiceStageLevel: Boolean
+        get() = p.getBoolean("voice_stage_level", false)
+        set(v) = p.edit().putBoolean("voice_stage_level", v).apply()
+
+    /** 操作中、他のアプリの上にリゲルを出す */
+    var bubbleEnabled: Boolean
+        get() = p.getBoolean("bubble", true)
+        set(v) = p.edit().putBoolean("bubble", v).apply()
+    var bubbleX: Float
+        get() = p.getFloat("bubble_x", -1f)
+        set(v) = p.edit().putFloat("bubble_x", v).apply()
+    var bubbleY: Float
+        get() = p.getFloat("bubble_y", -1f)
+        set(v) = p.edit().putFloat("bubble_y", v).apply()
+
+    /**
+     * AgentARM (スマホを載せる腕) を BLE でつないで動かすか (本人が設定でオンにしたときだけ。最初はオフ)。
+     * オンのときは、MCP サーバーが動いている間、腕とつながり、マグネット充電器の付け外しで腕を動かす
+     */
+    var armEnabled: Boolean
+        get() = p.getBoolean("arm_enabled", false)
+        set(v) = p.edit().putBoolean("arm_enabled", v).apply()
+
+    /**
+     * 音楽が流れたら、AgentARM が自動で踊る (本人が設定でオンにしたときだけ。最初はオフ)。
+     * スマホが腕に付いていて (ワイヤレス充電中)、顔を追っていない・音声の会話をしていないときだけ
+     */
+    var armAutoDance: Boolean
+        get() = p.getBoolean("arm_auto_dance", false)
+        set(v) = p.edit().putBoolean("arm_auto_dance", v).apply()
+
+    /** 音楽が流れたら、リゲルの画面 (まわりにカラフルなスペクトラム) を出す (最初はオン) */
+    var musicStage: Boolean
+        get() = p.getBoolean("music_stage", true)
+        set(v) = p.edit().putBoolean("music_stage", v).apply()
+
+    /** 音楽の画面で、拍に合わせて光らせる (オフでも、スペクトラムとヘッドホンは出る。光に敏感な人のため。最初はオン) */
+    var musicFlash: Boolean
+        get() = p.getBoolean("music_flash", true)
+        set(v) = p.edit().putBoolean("music_flash", v).apply()
+
+    /**
+     * 音楽の画面に歌詞を出す (LRCLIB から、曲名・アーティスト・長さで時刻付きの歌詞を取る。外のサービスに送るのは曲名などだけ。
+     * 歌詞が後ろに降ってくるキネティック・タイポグラフィ。最初はオン)
+     */
+    var musicLyrics: Boolean
+        get() = p.getBoolean("music_lyrics", true)
+        set(v) = p.edit().putBoolean("music_lyrics", v).apply()
+
+    /**
+     * 呼び名 (「ねえ、リゲル」) で起きたら、ChatGPT の音声モードが開くまでの間、リゲルがランダムな表情を見せてから
+     * 利用者の方を向く (音声モードが開くまでの間をつなぐ。最初はオン)
+     */
+    var wakeGreet: Boolean
+        get() = p.getBoolean("wake_greet", true)
+        set(v) = p.edit().putBoolean("wake_greet", v).apply()
+
+    /**
+     * 呼び名のしきい値 (UNO Q が「本人のリゲル」とみなす声の近さ。低いほど反応しやすく、ほかの人・似た言葉にも反応しやすい)。
+     * 腕に送り (obs voice の wth)、UNO Q の聞き取りがすぐ使う
+     */
+    var wakeThreshold: Float
+        get() = p.getFloat("wake_threshold", 0.58f)
+        set(v) = p.edit().putFloat("wake_threshold", v).apply()
+
+    /** リゲルが代わりに電話するとき、「〇〇さんの代わりに」と名乗る利用者の呼び名 (ChatGPT が caller を渡さないとき) */
+    var rigelCallerName: String
+        get() = p.getString("rigel_caller_name", "") ?: ""
+        set(v) = p.edit().putString("rigel_caller_name", v.trim()).apply()
+
+    /**
+     * かかってきた電話にリゲルが代わりに出るか、本人に選ばせる方法。
+     * off: しない / buttons: 着信の画面に「リゲルが代わりに出る」「自分で出る」を重ねる / voice: ChatGPT の音声モードを開いて尋ねる
+     */
+    var rigelIncoming: String
+        get() = p.getString("rigel_incoming", "buttons") ?: "buttons"
+        set(v) = p.edit().putString("rigel_incoming", v).apply()
+
+    /** 設定の画面で開いているカードの見出し (項目が多いので、カードを折りたたむ。最初は全部閉じる) */
+    var settingsOpen: Set<String>
+        get() = p.getStringSet("settings_open", emptySet())?.toSet() ?: emptySet()
+        set(v) = p.edit().putStringSet("settings_open", v).apply()
+
+    /**
+     * かかってきた電話に、本人が出ず選びもしないまま rigelAutoAnswerSec 秒たったら、リゲルが代わりに出るか
+     * (最初はオフ。代わりに出るかを選ばせる設定 rigelIncoming が「しない」のときは出ない)
+     */
+    var rigelAutoAnswer: Boolean
+        get() = p.getBoolean("rigel_auto_answer", false)
+        set(v) = p.edit().putBoolean("rigel_auto_answer", v).apply()
+
+    /** 着信から自動で出るまでの秒数 (留守番電話につながるより短く) */
+    var rigelAutoAnswerSec: Int
+        get() = p.getInt("rigel_auto_answer_sec", 10)
+        set(v) = p.edit().putInt("rigel_auto_answer_sec", v).apply()
+
+    /**
+     * リゲルが代わりに出た電話のあと、ChatGPT の音声モードを開いて用件を伝えさせるか (最初はオフ。
+     * オフなら通話の記録に残すだけ)
+     */
+    var rigelIncomingReport: Boolean
+        get() = p.getBoolean("rigel_incoming_report", false)
+        set(v) = p.edit().putBoolean("rigel_incoming_report", v).apply()
+
+    /**
+     * リゲルが代わりに電話している間、電話のアプリの画面の番号をモザイクで隠すか (NumberMask)。代行中はリゲルの通話の画面 (CallScreen) で
+     * 覆うので、最初はオフ
+     */
+    var numberMask: Boolean
+        get() = p.getBoolean("number_mask", false)
+        set(v) = p.edit().putBoolean("number_mask", v).apply()
+
+    /** リゲルが代わりにかけた・出た電話を録音して、通話の記録に残すか (相手には伝えない。最初はオン) */
+    var rigelRecord: Boolean
+        get() = p.getBoolean("rigel_record", true)
+        set(v) = p.edit().putBoolean("rigel_record", v).apply()
+
+    /** 前につないだ AgentARM の Bluetooth のアドレス (次は探さずにつなぐ。秘密ではない) */
+    var armAddress: String
+        get() = p.getString("arm_address", "") ?: ""
+        set(v) = p.edit().putString("arm_address", v).apply()
+
+    /** ホーム画面のリゲルを 3D で描く */
+    var avatar3d: Boolean
+        get() = p.getBoolean("avatar_3d", true)
+        set(v) = p.edit().putBoolean("avatar_3d", v).apply()
+
+    /** アバターの見た目 */
+    val avatar: String get() = "orb"
+
+    companion object {
+        const val DEFAULT_PORT = 8765
+        const val TOKEN_LENGTH = 32
+    }
+}
+
+/**
+ * 端末の操作の方式。
+ * - ADB: ワイヤレスデバッグで、この端末の adbd にシェルのコマンドを送る (Wi-Fi が要る)
+ * - HYBRID: 画面を読むのは ADB (漏れなし)、押す・入力・前面のアプリの判定はユーザー補助。どちらかが使えなければもう一方。
+ *   ChatGPT の強制停止は ADB がつながっていれば ADB
+ * - A11Y: ユーザー補助だけ (Wi-Fi もペアリングも要らない。他のアプリの強制停止はできない)
+ */
+enum class ControlMode(val id: String, val label: String) {
+    ADB("adb", "ADB のみ"),
+    HYBRID("hybrid", "ADB + ユーザー補助"),
+    A11Y("a11y", "ユーザー補助のみ"),
+}

@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "id": "basic.scroll_down",
+  "name": "画面の下を見る",
+  "kind": "basic",
+  "version": 1,
+  "source": "builtin",
+  "description": "いまの画面を下へ送って、続きを見せる (スクロール)",
+  "examples": [
+    "下を見せて",
+    "続きを見せて",
+    "もっと下",
+    "スクロールして"
+  ],
+  "args": [],
+  "app": null,
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "swipe",
+      "op": "swipe",
+      "direction": "up"
+    },
+    {
+      "id": "settle",
+      "op": "wait",
+      "ms": 500
+    }
+  ],
+  "success": null,
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "下をお見せしますね"
+}

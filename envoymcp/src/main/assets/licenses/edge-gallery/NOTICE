@@ -1,0 +1,10 @@
+ENVOY MCP には、Google AI Edge Gallery (https://github.com/google-ai-edge/gallery、Apache License 2.0、
+Copyright 2025-2026 Google LLC) の次のファイルを、変更せずに取り込んでいます (コミット 7b528c893f5a348a5cb3e99cdb7c96fd131c3252)。
+
+  com/google/ai/edge/gallery/services/semanticretrieval/OnDeviceEmbedder.kt
+  com/google/ai/edge/gallery/services/semanticretrieval/EmbedPart.kt
+  com/google/ai/edge/gallery/data/Types.kt
+  com/google/ai/edge/gallery/common/ImageUtils.kt
+
+写真を言葉で探すのに使うモデル EmbeddingGemma 2 (litert-community/embeddinggemma-2-740m-litert-lm) も
+Apache License 2.0 です。ライセンスの全文は同じフォルダの LICENSE にあります。

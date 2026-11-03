@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Rabi" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/rabi_bg</item>
+        <item name="android:statusBarColor">@color/rabi_bg</item>
+        <item name="android:navigationBarColor">@color/rabi_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+    <!-- 指紋などだけで承認する画面 (透明。後ろの確定しようとしている画面がそのまま見える) -->
+    <style name="Theme.Rabi.Transparent" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

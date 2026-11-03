@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "id": "app.settings.display",
+  "name": "画面の明るさの設定",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "設定アプリの「ディスプレイ」(画面の明るさ・文字の大きさなど) を開く",
+  "examples": [
+    "画面の明るさを変えたい",
+    "ディスプレイの設定を開いて",
+    "画面が暗い",
+    "画面の設定を見せて"
+  ],
+  "args": [],
+  "app": {
+    "package": "com.android.settings",
+    "label": "設定",
+    "alternatives": []
+  },
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [
+    {
+      "type": "app_installed",
+      "value": "com.android.settings"
+    }
+  ],
+  "steps": [
+    {
+      "id": "open",
+      "op": "intent",
+      "intent": {
+        "action": "android.settings.DISPLAY_SETTINGS"
+      },
+      "expect": {
+        "package": "{app.package}",
+        "timeout_ms": 6000
+      }
+    }
+  ],
+  "success": {
+    "package": "{app.package}",
+    "any_text": [
+      "明るさ",
+      "ディスプレイ",
+      "Brightness",
+      "Display"
+    ],
+    "timeout_ms": 4000
+  },
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "画面の明るさの設定を開きますね",
+  "say_done": "画面の明るさの設定を開きました"
+}

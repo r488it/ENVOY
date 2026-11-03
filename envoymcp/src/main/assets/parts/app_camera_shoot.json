@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "id": "app.camera.shoot",
+  "name": "写真を撮る",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "カメラを写真モードで開き、シャッターを押して写真を 1 枚撮る (シャッターが見つからなければ、画面を見ながら押す)",
+  "examples": [
+    "写真を撮って",
+    "写真を撮りたい",
+    "写真を一枚撮って",
+    "カメラで撮って",
+    "シャッターを押して"
+  ],
+  "args": [],
+  "app": null,
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "open",
+      "op": "intent",
+      "intent": {
+        "action": "android.media.action.STILL_IMAGE_CAMERA"
+      },
+      "expect": {
+        "selector": { "id": ["shutter_button"], "desc": ["シャッター", "写真を撮影", "写真を撮る"] },
+        "none_text": ["このアプリでは", "見つかりません"],
+        "timeout_ms": 6000
+      }
+    },
+    {
+      "id": "shoot",
+      "op": "tap",
+      "selector": { "id": ["shutter_button"], "desc": ["シャッター", "写真を撮影", "写真を撮る"] }
+    },
+    {
+      "id": "saved",
+      "op": "wait",
+      "ms": 1200,
+      "note": "撮れた (保存された) のを画面で少し見せてから、リゲルの画面に戻る"
+    }
+  ],
+  "success": null,
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "写真を撮りますね",
+  "say_done": "写真を撮りました",
+  "back_home": true
+}

@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "basic.open_app",
+  "name": "アプリを開く",
+  "kind": "basic",
+  "version": 1,
+  "source": "builtin",
+  "description": "名前を言われたアプリを開く",
+  "examples": [
+    "カメラを開いて",
+    "時計のアプリを出して",
+    "設定を開いて",
+    "地図を見せて",
+    "YouTubeをつけて"
+  ],
+  "args": [
+    {
+      "name": "app",
+      "type": "app",
+      "required": true,
+      "ask": "どのアプリを開きますか？",
+      "description": "開くアプリ"
+    }
+  ],
+  "app": null,
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [
+    {
+      "type": "arg",
+      "value": "app"
+    }
+  ],
+  "steps": [
+    {
+      "id": "open",
+      "op": "launch",
+      "package": "{app.package}",
+      "expect": {
+        "package": "{app.package}",
+        "timeout_ms": 6000
+      }
+    }
+  ],
+  "success": {
+    "package": "{app.package}",
+    "timeout_ms": 3000
+  },
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "{app.label}を開きますね",
+  "say_done": "{app.label}を開きました"
+}

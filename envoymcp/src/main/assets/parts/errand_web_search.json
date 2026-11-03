@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "errand.web_search",
+  "name": "インターネットで調べる",
+  "kind": "errand",
+  "version": 1,
+  "source": "builtin",
+  "description": "言われた言葉をインターネットで検索して、結果の画面を出す",
+  "examples": [
+    "明日の天気を調べて",
+    "近くの病院を検索して",
+    "〇〇について調べて",
+    "ニュースを調べて"
+  ],
+  "args": [
+    {
+      "name": "query",
+      "type": "text",
+      "required": true,
+      "ask": "何を調べますか？",
+      "description": "検索する言葉"
+    }
+  ],
+  "app": null,
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "open",
+      "op": "intent",
+      "intent": {
+        "action": "android.intent.action.VIEW",
+        "data": "https://www.google.com/search?q={query.value:url}"
+      }
+    },
+    {
+      "id": "settle",
+      "op": "wait",
+      "ms": 1500
+    }
+  ],
+  "success": {
+    "any_text": [
+      "{query.value}"
+    ],
+    "timeout_ms": 10000
+  },
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "「{query.value}」を調べますね",
+  "say_done": "調べた結果をお見せしています"
+}

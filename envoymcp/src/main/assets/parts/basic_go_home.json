@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "id": "basic.go_home",
+  "name": "最初の画面に戻る",
+  "kind": "basic",
+  "version": 1,
+  "source": "builtin",
+  "description": "いま開いているアプリを閉じて、ホーム画面 (アバター) に戻る",
+  "examples": [
+    "ホームに戻って",
+    "最初の画面にして",
+    "アプリを閉じて",
+    "元の画面に戻して"
+  ],
+  "args": [],
+  "app": null,
+  "conditions": {
+    "requires_unlock": false,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "home",
+      "op": "home",
+      "expect": {
+        "package": "com.rabi.launcher",
+        "timeout_ms": 4000
+      }
+    }
+  ],
+  "success": null,
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "最初の画面に戻りますね",
+  "say_done": "最初の画面に戻りました"
+}

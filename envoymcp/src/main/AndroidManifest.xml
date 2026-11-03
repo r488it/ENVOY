@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- スマホの中 (127.0.0.1) の MCP サーバーと、自分の端末の adbd への接続 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- ワイヤレスデバッグのポートを mDNS で探す -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- MCP サーバーを動かしている間の常駐 (通知に出し続ける)。再起動後の自動再開はしない (最小の接続の検証には要らない) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 操作中、他のアプリの上にリゲルを出す -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 音声モードに重ねたリゲルを ChatGPT の声に合わせて動かす (試験。本人が設定でオンにしたときだけ。端末の出力の波形 (Visualizer) を読むのに要る。マイクの音は使わない) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- ユーザー補助で操作するとき、× で閉じた ChatGPT を裏で終えるよう頼む (強制停止は ADB のときだけ) -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <!-- 確定 (送信・投稿など) の本人確認 -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- 電話をかける道具 (call_phone): 連絡先から番号を探し、承認のあとすぐ発信する (本人が設定で許可したときだけ) -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- AgentARM (スマホを載せる腕): BLE でつなぐ (位置には使わない)。顔の追跡に前面カメラを使う (映像は端末の外に出さない)。
+         どれも本人が設定で「AgentARM」をオンにしたときだけ求める -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- ChatGPT などが前面にあるときも顔を追えるように、腕を使う間はサービスにカメラの種類も付ける -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- AgentARM が音楽に合わせて踊るとき、ほかのアプリが前面でも端末の出力の音 (拍) を読めるように、サービスにマイクの種類も付ける
+         (Android は出力の波形を読むのにもマイクの許可を求める。マイクの音は使わない) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <!-- 写真を言葉で探す (EmbeddingGemma 2 を TPU で動かす。Edge Gallery と同じ。無ければ CPU) -->
+    <uses-feature android:name="android.hardware.npu" android:required="false" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <package android:name="com.openai.chatgpt" />
+    </queries>
+
+    <application
+        android:name="com.rabi.envoymcp.McpApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Rabi">
+        <!-- 写真を言葉で探す: Pixel の TPU (Tensor) と GPU のライブラリ (Edge Gallery と同じ。無い端末でも入れられるよう required=false) -->
+        <uses-native-library android:name="libedgetpu_util.so" android:required="false" />
+        <uses-native-library android:name="libedgetpu_tachyon.google.so" android:required="false" />
+        <uses-native-library android:name="libedgetpu_client.google.so" android:required="false" />
+        <uses-native-library android:name="libedgetpu_litert.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+
+
+        <!-- ランチャー (ホーム画面) -->
+        <activity
+            android:name="com.rabi.envoymcp.HomeActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- デジタル アシスタント: 設定で ENVOY MCP を選ぶと、電源ボタンの長押しなどでリゲルのタップと同じく ChatGPT の音声モードを開く (画面は出さない) -->
+        <activity
+            android:name="com.rabi.envoymcp.AssistActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.rabi.envoymcp.SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title"
+            android:taskAffinity="com.rabi.envoymcp.settings" />
+
+        <!-- 通話の記録 (リゲルが代わりにかけた・出た電話のやり取りと録音) -->
+        <activity
+            android:name="com.rabi.envoymcp.CallLogActivity"
+            android:exported="false"
+            android:label="通話の記録"
+            android:taskAffinity="com.rabi.envoymcp.settings"
+            android:theme="@style/Theme.Rabi" />
+
+        <!-- 音楽が流れている間のリゲルの画面 (画面いっぱい。音楽が止まると閉じる) -->
+        <activity
+            android:name="com.rabi.envoymcp.MusicStageActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.rabi.envoymcp.music"
+            android:theme="@style/Theme.Rabi" />
+
+        <!-- モニター (PC モード) に開くリゲルの窓 (試験。デスクトップのアプリの窓として) -->
+        <activity
+            android:name="com.rabi.envoymcp.MonitorActivity"
+            android:exported="false"
+            android:label="リゲル"
+            android:resizeableActivity="true"
+            android:taskAffinity="com.rabi.envoymcp.monitor"
+            android:theme="@style/Theme.Rabi" />
+
+        <!-- 撮りながら顔を追う間の画面 (前面カメラの映像と、止めるボタン。録画が終わると閉じる) -->
+        <activity
+            android:name="com.rabi.envoymcp.RecordActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.rabi.envoymcp.record"
+            android:theme="@style/Theme.Rabi" />
+
+        <activity
+            android:name="com.rabi.launcher.ui.ApprovalActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.rabi.envoymcp.approval"
+            android:theme="@style/Theme.Rabi" />
+
+        <!-- 指紋などだけで承認する (本人確認がオンのとき。透明で、Android の本人確認だけを出す) -->
+        <activity
+            android:name="com.rabi.launcher.ui.QuickApprovalActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity="com.rabi.envoymcp.quickapproval"
+            android:theme="@style/Theme.Rabi.Transparent" />
+
+        <service
+            android:name="com.rabi.envoymcp.McpService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|camera|microphone">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local MCP server (127.0.0.1 only) that lets the user's ChatGPT app operate this phone on the user's request" />
+        </service>
+
+        <!-- 端末の操作の方式が「ユーザー補助」を含むときに使う (本人が Android の設定でオンにしたときだけ動く)。
+             呼び出せるのは BIND_ACCESSIBILITY_SERVICE を持つシステムだけ -->
+        <service
+            android:name="com.rabi.envoymcp.a11y.A11yService"
+            android:exported="true"
+            android:label="@string/a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/a11y_service" />
+        </service>
+
+        <!-- 再生中の曲名 (YouTube Music など) を読むためだけの受け口 (本人が「通知へのアクセス」を許可したときだけ。通知の中身は読まない) -->
+        <service
+            android:name="com.rabi.envoymcp.RigelNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="com.rabi.launcher.adb.PairingReceiver"
+            android:exported="false" />
+    </application>
+</manifest>
