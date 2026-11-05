@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "id": "demo.mytube.play",
+  "name": "リゲルのダンスを流す (見本の音楽アプリ)",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "撮影・試験用の見本の音楽アプリ「MyTube Music」を開き、自作の曲「リゲルのダンス」を流す (腕に踊ってもらうときは、このあと arm_dance)",
+  "examples": [
+    "音楽をかけて",
+    "リゲルのダンスを流して",
+    "曲を流して"
+  ],
+  "args": [],
+  "app": {
+    "package": "com.rabi.demo.mytube",
+    "label": "MyTube Music",
+    "alternatives": []
+  },
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [
+    {
+      "type": "app_installed",
+      "value": "com.rabi.demo.mytube"
+    }
+  ],
+  "steps": [
+    {
+      "id": "open",
+      "op": "launch",
+      "package": "{app.package}",
+      "expect": {
+        "package": "{app.package}",
+        "any_text": ["リゲルのダンス"],
+        "timeout_ms": 6000
+      }
+    },
+    {
+      "id": "play",
+      "op": "tap",
+      "selector": { "desc": ["再生"], "exact": true },
+      "note": "もう流れているとき (一時停止のボタンになっている) は押さない",
+      "optional": true
+    }
+  ],
+  "success": {
+    "package": "{app.package}",
+    "timeout_ms": 3000
+  },
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "曲を流しますね",
+  "say_done": "リゲルのダンスを流しています"
+}

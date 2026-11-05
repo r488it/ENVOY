@@ -106,7 +106,8 @@ class MartActivity : Activity() {
             addView(text(item.price, 18f, "#D2452E", bold = true))
         }
         addView(info, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(14) })
-        if (withButton) addView(button("注文へ", "#E8772E") { showConfirm(item) }, LinearLayout.LayoutParams(dp(88), dp(44)))
+        // 「注文」の言葉は確定のボタンと見なされるので、選ぶだけのボタンは「選ぶ」にする
+        if (withButton) addView(button("選ぶ", "#E8772E") { showConfirm(item) }, LinearLayout.LayoutParams(dp(88), dp(44)))
     }
 
     private fun row(k: String, v: String, strong: Boolean = false) = LinearLayout(this).apply {

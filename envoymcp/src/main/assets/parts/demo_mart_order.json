@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "id": "demo.mart.order",
+  "name": "いつものお米を注文する (見本の通販)",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "撮影・試験用の見本の通販「まいにちマート」で、いつものお米 5kg を注文する。確定の前に、スマホで本人の承認が出る (注文はどこにも届かない)",
+  "examples": [
+    "いつものお米を注文して",
+    "お米を頼んで",
+    "まいにちマートでお米を注文して"
+  ],
+  "args": [],
+  "app": {
+    "package": "com.rabi.demo.mart",
+    "label": "まいにちマート",
+    "alternatives": []
+  },
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [
+    {
+      "type": "app_installed",
+      "value": "com.rabi.demo.mart"
+    }
+  ],
+  "steps": [
+    {
+      "id": "open",
+      "op": "launch",
+      "package": "{app.package}",
+      "expect": {
+        "package": "{app.package}",
+        "any_text": ["いつもの買い物"],
+        "timeout_ms": 6000
+      }
+    },
+    {
+      "id": "choose",
+      "op": "tap",
+      "selector": { "text": ["選ぶ"], "exact": true },
+      "note": "品物の一覧のいちばん上 (いつものお米 5kg) の「選ぶ」",
+      "expect": {
+        "any_text": ["ご注文の確認"],
+        "timeout_ms": 4000
+      }
+    },
+    {
+      "id": "confirm",
+      "op": "tap",
+      "selector": { "text": ["注文を確定する"], "exact": true },
+      "commit": true
+    }
+  ],
+  "success": {
+    "package": "{app.package}",
+    "any_text": ["ご注文を受け付けました"],
+    "timeout_ms": 5000
+  },
+  "commit": {
+    "kind": "purchase",
+    "approval": "biometric",
+    "summary": "まいにちマートで、いつものお米 5kg を注文します",
+    "fields": {
+      "品物": "いつものお米 5kg ・ 1 袋",
+      "金額": "¥2,980",
+      "お届け": "明日 ・ 自宅"
+    },
+    "field_order": ["品物", "金額", "お届け"],
+    "screen_checks": ["いつものお米 5kg", "¥2,980"]
+  },
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "いつものお米を注文しますね",
+  "say_done": "いつものお米を注文しました"
+}

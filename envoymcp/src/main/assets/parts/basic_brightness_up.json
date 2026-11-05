@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "basic.brightness_up",
+  "name": "画面を明るくする",
+  "kind": "basic",
+  "version": 1,
+  "source": "builtin",
+  "description": "クイック設定を開き、明るさのつまみのまん中を押して、画面の明るさをまん中あたりにする (暗すぎて見えないとき)。終わったらクイック設定を閉じる",
+  "examples": [
+    "画面が暗い",
+    "画面を明るくして",
+    "暗くて見えない",
+    "明るくして"
+  ],
+  "args": [],
+  "app": null,
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [],
+  "steps": [
+    {
+      "id": "panel",
+      "op": "panel",
+      "text": "quick_settings",
+      "expect": {
+        "selector": { "desc": ["ディスプレイの明るさ", "Display brightness"], "exact": true },
+        "timeout_ms": 4000
+      }
+    },
+    {
+      "id": "brightness",
+      "op": "tap",
+      "selector": { "desc": ["ディスプレイの明るさ", "Display brightness"], "exact": true },
+      "note": "つまみは押した場所まで値が飛ぶ。まん中を押すので、明るさはまん中あたりになる"
+    },
+    {
+      "id": "settle",
+      "op": "wait",
+      "ms": 1200,
+      "note": "明るくなったのを少し見せてから閉じる"
+    },
+    {
+      "id": "close",
+      "op": "panel",
+      "text": "close"
+    }
+  ],
+  "success": null,
+  "commit": null,
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "明るくしますね",
+  "say_done": "画面を明るくしました"
+}

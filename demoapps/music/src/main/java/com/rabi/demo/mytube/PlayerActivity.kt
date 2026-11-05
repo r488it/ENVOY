@@ -161,6 +161,6 @@ class PlayerActivity : Activity() {
     private companion object {
         const val TITLE = "リゲルのダンス"
         const val ARTIST = "リゲル"
-        const val DURATION_MS = 23_355
+        const val DURATION_MS = 21_419
     }
 }
