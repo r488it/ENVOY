@@ -201,7 +201,7 @@ class McpServerTest {
     private suspend fun callResult(server: McpServer, path: String, name: String): JSONObject =
         JSONObject(String(server.respond(req(rpc("tools/call", JSONObject().put("name", name).put("arguments", JSONObject())), path = path)).body)).getJSONObject("result")
 
-    /** 本体の合言葉は、エージェントの一覧があっても今までどおり: すべての道具が同じ並びで出て、呼べる */
+    /** 本体の合言葉では、エージェントの一覧があっても、すべての道具が同じ並びで出て、呼べる */
     @Test fun mainTokenKeepsEverything() = runTest {
         assertEquals(listOf("get_state", "tap", "call_phone", "mystery"), names(guarded, "/mcp/$TOKEN"))
         assertEquals(many.list().toString(), JSONObject(String(guarded.respond(req(rpc("tools/list"))).body)).getJSONObject("result").getJSONArray("tools").toString())
@@ -237,7 +237,7 @@ class McpServerTest {
         assertFalse(callResult(guarded, "/mcp/${a.token}", "get_state").getBoolean("isError"))
         assertEquals(listOf("get_state"), many.called)
         assertEquals(listOf<String?>(Agents.NEW_NAME), many.agents)
-        // 一覧に無い道具は、今までどおり「ありません」
+        // 一覧に無い道具は「ありません」
         val unknown = JSONObject(String(guarded.respond(req(rpc("tools/call", JSONObject().put("name", "nope")), path = "/mcp/${a.token}")).body))
         assertEquals(McpProtocol.INVALID_PARAMS, unknown.getJSONObject("error").getInt("code"))
     }

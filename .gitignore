@@ -9,3 +9,4 @@ local.properties
 # 秘密情報は置かない
 .env
 secrets.properties
+__pycache__/
