@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- アイコンの前景: 色のついた 4 つのタイル -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FF7AA2" android:pathData="M30,30h22v22h-22z" />
+    <path android:fillColor="#FFC93C" android:pathData="M56,30h22v22h-22z" />
+    <path android:fillColor="#5CC8FF" android:pathData="M30,56h22v22h-22z" />
+    <path android:fillColor="#7BE07B" android:pathData="M56,56h22v22h-22z" />
+</vector>

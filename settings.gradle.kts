@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "ENVOY"
 include(":envoymcp")
+// 撮影・試験用の架空のアプリ (広告・通販・音楽。どこにも通信しない)
+include(":demoapps:puzzle", ":demoapps:mart", ":demoapps:music")

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- アイコンの前景: 音符 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M46,34l28,-6v32a8,8 0 1 1 -4,-7v-17l-20,4v24a8,8 0 1 1 -4,-7z" />
+</vector>
