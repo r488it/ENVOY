@@ -126,7 +126,7 @@ class McpSettings(context: Context) {
 
     /**
      * 音楽が流れたら、AgentARM が自動で踊る (本人が設定でオンにしたときだけ。最初はオフ)。
-     * スマホが腕に付いていて (ワイヤレス充電中)、顔を追っていない・音声の会話をしていないときだけ
+     * スマホが腕に付いていて (ワイヤレス充電中)、顔を追っていない・通話をしていないときだけ (ChatGPT との音声の会話の間は踊る)
      */
     var armAutoDance: Boolean
         get() = p.getBoolean("arm_auto_dance", false)

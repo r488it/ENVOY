@@ -111,6 +111,13 @@ class ArmController(
     var onDance: (() -> Unit)? = null
     /** 踊りの予約が変わった (音楽の見張りを動かす・止める) */
     var onReserveChanged: (() -> Unit)? = null
+    /**
+     * 本物の通話 (携帯の通話・LINE の通話・リゲルの代わりの電話) の最中か。その間は、音楽が流れても自動では踊らない。
+     * ChatGPT との音声の会話は通話に入れない (音声モードの間も、音楽が流れたら踊る)。決めるのは McpGraph (ChatGPT かどうかを見分けられる)
+     */
+    var inCall: suspend () -> Boolean = {
+        context.getSystemService(AudioManager::class.java)?.mode.let { it == AudioManager.MODE_IN_CALL || it == AudioManager.MODE_IN_COMMUNICATION }
+    }
     /** 録画を始めた (録画の画面を開く) */
     var onRecordStarted: (() -> Unit)? = null
     /** 腕のボードが呼び名「リゲル」を本人の声で聞いた (試験。本人らしさ 0..1) */
@@ -1068,7 +1075,7 @@ class ArmController(
     }
 
     /** 自動で踊らない理由 (踊ってよければ null) */
-    private fun autoBlocker(): String? = when {
+    private suspend fun autoBlocker(): String? = when {
         !settings.armAutoDance -> "設定がオフ"
         !link.ready -> "腕につながっていない"
         armVersion < 2 -> "腕のプログラムが古い"
@@ -1076,7 +1083,7 @@ class ArmController(
         following -> "顔を追っている (動画を見ている)"
         dancing || pending != null || danceStarting -> "ほかの動きの最中"
         hasReservation() -> "予約した踊りがある"
-        context.getSystemService(AudioManager::class.java)?.mode == AudioManager.MODE_IN_COMMUNICATION -> "通話・音声の会話の最中"
+        inCall() -> "通話の最中"
         !music.hasPermission() -> "マイクの許可がない"
         else -> null
     }

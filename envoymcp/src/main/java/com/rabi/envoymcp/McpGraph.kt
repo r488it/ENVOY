@@ -388,6 +388,25 @@ class McpGraph(val context: Context) {
         }
     }
 
+    @Volatile private var realCallAt = 0L
+    @Volatile private var realCallLast = false
+
+    /**
+     * 本物の通話 (携帯の通話・リゲルの代わりの電話・LINE などの通話) の最中か。ChatGPT との音声の会話は通話に入れない。
+     * 通信中のモードの持ち主を ADB で確かめるのは重いので、結果を少しの間使い回す
+     */
+    suspend fun inRealCall(): Boolean {
+        val mode = context.getSystemService(android.media.AudioManager::class.java).mode
+        if (mode == android.media.AudioManager.MODE_IN_CALL || rigelCaller.busy) return true
+        if (mode != android.media.AudioManager.MODE_IN_COMMUNICATION) return false
+        val now = System.currentTimeMillis()
+        if (now - realCallAt < REAL_CALL_CACHE_MS) return realCallLast
+        // LINE の通話の画面が出ていれば通話。そうでなければ、持ち主が ChatGPT でないときだけ通話とみなす
+        val call = lineCaller.inCallScreen() || !chatGptVoiceActive()
+        realCallLast = call; realCallAt = now
+        return call
+    }
+
     private suspend fun chatGptVoiceActive(): Boolean {
         if (context.getSystemService(android.media.AudioManager::class.java).mode != android.media.AudioManager.MODE_IN_COMMUNICATION) return false
         if (!adb.isConnected) return true
@@ -596,6 +615,7 @@ class McpGraph(val context: Context) {
         arm.onDance = { if (!voiceStage.isShowing) musicStage.show() }
         arm.onReserveChanged = { refreshMusic() }
         arm.onWake = { s -> scope.launch { wakeFromArm(s) } }
+        arm.inCall = { inRealCall() }
         arm.onRecordStarted = { RecordActivity.open(context) }
         // リゲルの気分を、AgentARM の光にも出す
         scope.launch { state.map { it.mood }.distinctUntilChanged().collect { arm.setMood(it) } }
@@ -628,6 +648,8 @@ class McpGraph(val context: Context) {
         /** リゲルの電話のあと、端末の通話中が解けるのを待つ最長 (解けるまで 7 秒ほどかかる) */
         private const val CALL_END_WAIT_MS = 12_000L
         private const val FOREGROUND_TIMEOUT_MS = 5_000L
+        /** 本物の通話かを確かめた結果を使い回す長さ */
+        private const val REAL_CALL_CACHE_MS = 2_000L
         /** ChatGPT を終えてから・ホームを出してから、次へ進むまでの待ち */
         private const val CLOSE_SETTLE_MS = 400L
         private const val INJECT_GRACE_MS = 600L

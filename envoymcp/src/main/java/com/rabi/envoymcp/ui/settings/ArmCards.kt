@@ -159,7 +159,7 @@ private fun DanceCard(g: McpGraph, a: SettingsActivity, tick: Int) {
     val access = remember(tick) { g.nowPlaying.hasAccess() }
     Card("音楽に合わせて踊る", when { !auto -> "オフ"; !mic -> "マイクが未許可"; else -> "オン" }, when { !auto -> null; else -> mic }, icon = Icons.Rounded.Celebration) {
         Toggle("音楽が流れたら踊る", auto) { a.setAutoDance(it) }
-        Note("スマホで音楽 (YouTube Music・Spotify など) が流れ始めたら、腕が拍に合わせて踊ります。スマホが腕に付いていて (ワイヤレス充電中)、顔を追っていない・音声の会話をしていないときだけ。動画では踊りません。ChatGPT に「踊って」と頼むこともできます。")
+        Note("スマホで音楽 (YouTube Music・Spotify など) が流れ始めたら、腕が拍に合わせて踊ります。スマホが腕に付いていて (ワイヤレス充電中)、顔を追っていない・通話をしていないときだけ (ChatGPT との音声の会話の間も踊ります)。動画では踊りません。ChatGPT に「踊って」と頼むこともできます。")
         Line("マイクの許可", if (mic) "許可" else "未許可 (拍を取るのに要ります)", mic)
         if (!mic) Btn("許可する", true) { a.requestMic() }
         if (auto) Line("音楽", if (st.musicPlaying) "流れています" else "流れていません", if (st.musicPlaying) true else null)
