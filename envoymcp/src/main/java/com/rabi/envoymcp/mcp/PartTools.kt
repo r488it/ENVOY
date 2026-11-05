@@ -16,7 +16,7 @@ import org.json.JSONObject
 internal class PartTools(st: ToolState) : ToolGroup(st) {
     fun listParts(): ToolResult {
         val arr = JSONArray(g.parts.usable().map { p ->
-            JSONObject().put("part_id", p.id).put("name", p.name).put("description", p.description)
+            JSONObject().put("part_id", p.id).put("name", p.name).put("description", p.description).put("examples", JSONArray(p.examples))
                 .put("args", JSONArray(p.args.map { JSONObject().put("name", it.name).put("type", it.type.name.lowercase()).put("required", it.required).put("description", it.description) }))
                 .put("needs_approval", p.hasCommit).put("learned", p.source == "learned")
         })

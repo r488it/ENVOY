@@ -95,12 +95,14 @@ class McpTools(private val g: McpGraph) : ToolHost {
             act = false, caption = "ショートカットを調べています", adb = false,
             params = props("package" to str("このアプリの分だけ返す (省略可)"))) { appTools.listShortcuts(it) },
         Tool("list_parts", "部品の一覧",
-            "登録済みの部品 (手順をまとめたもの) の ID・名前・説明・引数を返します。run_part で動かせます。読むだけです。",
+            "スマホの操作を頼まれたら、最初に呼んでください。登録済みの部品 (よく使う手順をまとめたもの) の ID・名前・説明・頼み方の例・引数を返します。" +
+                "頼みに合う部品があれば、1 手ずつ操作する前に run_part で動かします (速く、確かです)。読むだけです。",
             act = false, caption = "部品を調べています", adb = false) { partTools.listParts() },
 
         // ---------------------------------------------------------------- 操作する
         Tool("open_app", "アプリを開く",
-            "アプリを開きます。app にはアプリの名前かパッケージ名 (list_apps のもの) を入れます。",
+            "アプリを開きます。app にはアプリの名前かパッケージ名 (list_apps のもの) を入れます。" +
+                "操作の頼みを受けたら、先に list_parts で、頼みに合う部品 (よく使う手順) がないか確かめてください。",
             act = true, caption = "アプリを開いています", params = props("app" to str("アプリの名前かパッケージ名")), required = listOf("app")) { appTools.openApp(it) },
         Tool("open_shortcut", "ショートカットを開く",
             "アプリのショートカット (list_shortcuts のもの) を開きます。投稿の画面などをすぐ開けます。開くだけで、送信・投稿はしません。",
@@ -370,14 +372,16 @@ class McpTools(private val g: McpGraph) : ToolHost {
 
         // ---------------------------------------------------------------- 部品
         Tool("run_part", "部品を動かす",
-            "登録済みの部品 (list_parts のもの) を動かします。args には部品の引数を {名前: 値} で入れます (アプリはアプリの名前かパッケージ名)。" +
+            "登録済みの部品 (list_parts のもの) を動かします。頼みに合う部品があれば、1 手ずつ操作する前にこれを使います。" +
+                "args には部品の引数を {名前: 値} で入れます (アプリはアプリの名前かパッケージ名)。" +
                 "途中で画面が想定と違えば止めて、そのときの画面を返します (そこからは個別の道具で続けられます)。確定のある部品は、スマホでの承認を待ちます。",
             act = true, caption = "部品を動かしています", timeoutMs = APPROVAL_TIMEOUT_MS,
             params = props("part_id" to str("部品の ID"), "args" to JSONObject().put("type", "object").put("description", "引数 {名前: 値}")),
             required = listOf("part_id")) { partTools.runPart(it) },
         Tool("save_part", "直前の操作を部品として登録",
             "この会話で行った操作 (open_app・tap・type_text・scroll など、前回の登録より後のもの) を、次から run_part で使える部品として登録します。" +
-                "うまくいった操作のあとにだけ使ってください。入れた文字を毎回変えたいときは args に {入れた文字: 引数の名前} を入れます。" +
+                "うまくいった操作のあとにだけ使ってください。部品なしでうまくいったときは、利用者に「次から一瞬でできるよう、この手順を覚えておきましょうか」と聞き、よいと言われたら使います。" +
+                "入れた文字を毎回変えたいときは args に {入れた文字: 引数の名前} を入れます。" +
                 "確定らしい手は、動かすたびに承認が要る形で登録されます。",
             act = false, caption = "部品を登録しています", adb = false, readOnly = false,
             params = props("name" to str("部品の名前 (短く)"), "description" to str("何をする部品か"),
