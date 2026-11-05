@@ -7,6 +7,7 @@ import android.os.BatteryManager
 import android.os.PowerManager
 import android.util.Base64
 import com.rabi.envoymcp.BuildConfig
+import com.rabi.envoymcp.VisionProvider
 import com.rabi.envoymcp.core.RabiLog
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
@@ -96,8 +97,13 @@ internal class ScreenTools(st: ToolState) : ToolGroup(st) {
 
     suspend fun lookAtScreen(): ToolResult {
         if (!g.settings.allowScreenshots) return failed("利用者が設定で、画面の画像を使わないようにしています。read_screen を使ってください。")
-        val st = g.auth.status.value
-        if (!st.signedIn) return failed("スマホの ENVOY MCP で「ChatGPT でサインイン」が済んでいないので、画面を見られません。read_screen を使ってください。")
+        if (g.settings.visionProvider == VisionProvider.CLAUDE) {
+            if (g.claudeKey.read() == null) return failed("スマホの ENVOY MCP の設定で Claude の API キーが保存されていないので、画面を見られません " +
+                "(利用者が ENVOY MCP の設定の「スマホの操作」›「画面の理解」でキーを保存すると使えます)。read_screen を使ってください。")
+        } else {
+            val st = g.auth.status.value
+            if (!st.signedIn) return failed("スマホの ENVOY MCP で「ChatGPT でサインイン」が済んでいないので、画面を見られません。read_screen を使ってください。")
+        }
         val t0 = System.currentTimeMillis()
         val o = g.device.observe(screenshot = true)
         RabiLog.i("vision", "capture ${System.currentTimeMillis() - t0}ms")

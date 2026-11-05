@@ -21,10 +21,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.core.net.toUri
+import com.rabi.envoymcp.ClaudeModel
 import com.rabi.envoymcp.ControlMode
 import com.rabi.envoymcp.HomeActivity
 import com.rabi.envoymcp.McpApp
 import com.rabi.envoymcp.McpService
+import com.rabi.envoymcp.VisionProvider
+import com.rabi.envoymcp.auth.ClaudeClient
 import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.mcp.ActivityLog
@@ -167,6 +170,25 @@ class SettingsActivity : ComponentActivity() {
     }
 
     fun setScreenshots(on: Boolean) { g.settings.allowScreenshots = on; refresh.intValue++ }
+
+    // ---------------------------------------------------------------- 画面の理解 (ChatGPT か Claude)
+
+    fun setVisionProvider(p: VisionProvider) { g.settings.visionProvider = p; refresh.intValue++ }
+    fun setClaudeModel(m: ClaudeModel) { g.settings.claudeModel = m; refresh.intValue++ }
+
+    /** Claude の API キーをクリップボードから保存する (画面には出さない。保存したらクリップボードを空にする) */
+    fun saveClaudeKeyFromClipboard(): String {
+        val cm = getSystemService(ClipboardManager::class.java)
+        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()?.trim()
+        if (text.isNullOrEmpty()) return "クリップボードが空です。Claude Console で API キーをコピーしてから押してください"
+        ClaudeClient.keyProblem(text)?.let { return it }
+        g.claudeKey.write(text)
+        cm.clearPrimaryClip()
+        refresh.intValue++
+        return "Claude の API キーを保存しました (${ClaudeClient.tail(text)})。クリップボードは空にしました"
+    }
+
+    fun clearClaudeKey() { g.claudeKey.clear(); refresh.intValue++ }
 
     fun setVoicePrimer(on: Boolean) { g.settings.voicePrimer = on; refresh.intValue++ }
 

@@ -19,13 +19,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
+import com.rabi.envoymcp.ClaudeModel
 import com.rabi.envoymcp.ControlMode
 import com.rabi.envoymcp.McpGraph
+import com.rabi.envoymcp.VisionProvider
 import com.rabi.envoymcp.a11y.A11yService
+import com.rabi.envoymcp.auth.ClaudeClient
 import com.rabi.envoymcp.device.adb.AdbState
 import com.rabi.envoymcp.device.adb.PairingNotifier
 import kotlinx.coroutines.launch
@@ -116,31 +120,91 @@ internal fun ApprovalCard(g: McpGraph, a: SettingsActivity, tick: Int) {
     }
 }
 
-/** 画面の理解: Sign in with ChatGPT で、画面の画像を AI に読ませる (ChatGPT のアプリは道具の画像をモデルに見せないため) */
+/**
+ * 画面の理解: 画面の画像を ENVOY MCP の中の AI に読ませる (ChatGPT のアプリは道具の画像をモデルに見せないため)。
+ * 読む AI は、ChatGPT (Sign in with ChatGPT) か Claude (本人の Anthropic の API キー) から選ぶ
+ */
 @Composable
-internal fun VisionCard(g: McpGraph, a: SettingsActivity, tick: Int) {
+internal fun VisionCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String) -> Unit) {
     val ai by g.auth.status.collectAsState()
     val shots = remember(tick) { g.settings.allowScreenshots }
-    Card("画面の理解 (ChatGPT でサインイン)", ai.label, ai.connected, icon = Icons.Rounded.Visibility) {
-        Note("ChatGPT のアプリは、ENVOY MCP が返した画面の画像を AI に見せません。そこで ENVOY MCP の中で、あなたの ChatGPT のプランを使って画像を読み、画面の説明と押せそうなもの (位置つき) を文章にして返します (道具 look_at_screen)。API キーは要りません。")
-        Line("状態", ai.label + (ai.maskedAccount?.let { " ($it)" } ?: ""), ai.connected)
-        ai.error?.let { Note(it) }
-        Btns {
-            Btn("Continue with ChatGPT", !ai.signedIn) { g.auth.signIn() }
-            if (ai.signedIn) Btn("ログアウト") { g.auth.signOut { } }
-        }
-        if (ai.models.isNotEmpty()) {
-            Text("画像を読むモデル", color = Palette.Label, fontSize = 13.sp)
-            ai.models.take(12).forEach { m ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = ai.selectedModel == m.slug, onClick = { g.auth.selectModel(m.slug) })
-                    Text(m.slug, color = Color.White, fontSize = 14.sp)
+    val provider = remember(tick) { g.settings.visionProvider }
+    val claude = provider == VisionProvider.CLAUDE
+    // キーは画面に出さない (末尾 4 文字だけ)
+    val keyTail = remember(tick) { g.claudeKey.read()?.let { ClaudeClient.tail(it) } }
+    val (status, ok) = if (claude) {
+        if (keyTail != null) "Claude・キー保存済み" to true else "Claude・API キー未設定" to false
+    } else ai.label to ai.connected
+    Card(CardTitle.VISION, status, ok, icon = Icons.Rounded.Visibility) {
+        Note("ChatGPT のアプリは、ENVOY MCP が返した画面の画像を AI に見せません。そこで ENVOY MCP の中の AI で画像を読み、画面の説明と押せそうなもの (位置つき) を文章にして返します (道具 look_at_screen)。読む AI は、ここで選べます。")
+        Text("画像を読む AI", color = Palette.Label, fontSize = 13.sp)
+        listOf(
+            VisionProvider.CHATGPT to "あなたの ChatGPT のプランで読みます。API キーは要りません",
+            VisionProvider.CLAUDE to "あなたの Anthropic の API キーで読みます。料金は、あなたの API の利用分としてかかります",
+        ).forEach { (p, desc) -> Choice(p.label, desc, provider == p) { a.setVisionProvider(p) } }
+        if (claude) ClaudeVision(g, a, tick, keyTail, say) else {
+            Line("状態", ai.label + (ai.maskedAccount?.let { " ($it)" } ?: ""), ai.connected)
+            ai.error?.let { Note(it) }
+            Btns {
+                Btn("Continue with ChatGPT", !ai.signedIn) { g.auth.signIn() }
+                if (ai.signedIn) Btn("ログアウト") { g.auth.signOut { } }
+            }
+            if (ai.models.isNotEmpty()) {
+                Text("画像を読むモデル", color = Palette.Label, fontSize = 13.sp)
+                ai.models.take(12).forEach { m ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = ai.selectedModel == m.slug, onClick = { g.auth.selectModel(m.slug) })
+                        Text(m.slug, color = Color.White, fontSize = 14.sp)
+                    }
                 }
             }
         }
-        Toggle("画面の画像を ChatGPT に渡す", shots) { a.setScreenshots(it) }
-        Note(if (shots) "画面の画像は、ChatGPT が look_at_screen を呼んだときだけ OpenAI に送ります。「画面の画像を ChatGPT に渡す」をオフにすると送りません。"
-            else "「画面の画像を ChatGPT に渡す」がオフなので、画像は送りません (look_at_screen は使えません)。")
+        Toggle("画面の画像を AI に渡す", shots) { a.setScreenshots(it) }
+        Note(when {
+            !shots -> "「画面の画像を AI に渡す」がオフなので、画像は送りません (look_at_screen は使えません)。"
+            claude -> "画面の画像は、ChatGPT が look_at_screen を呼んだときだけ Anthropic (Claude) に送ります。「画面の画像を AI に渡す」をオフにすると送りません。"
+            else -> "画面の画像は、ChatGPT が look_at_screen を呼んだときだけ OpenAI に送ります。「画面の画像を AI に渡す」をオフにすると送りません。"
+        })
+    }
+}
+
+/** 画面の理解の Claude: API キー (クリップボードから保存・消す。keyTail は保存したキーの末尾 4 文字)、モデル、試す */
+@Composable
+private fun ClaudeVision(g: McpGraph, a: SettingsActivity, tick: Int, keyTail: String?, say: (String) -> Unit) {
+    val model = remember(tick) { g.settings.claudeModel }
+    // 試した結果 (使えるか (確かめている間は null), 一言)。キーかモデルを変えたら消す
+    var check by remember(keyTail, model) { mutableStateOf<Pair<Boolean?, String>?>(null) }
+    val scope = rememberCoroutineScope()
+    Line("API キー", if (keyTail != null) "保存済み（$keyTail）" else "未設定", keyTail != null)
+    Btns {
+        Btn("クリップボードから保存", keyTail == null) { say(a.saveClaudeKeyFromClipboard()) }
+        if (keyTail != null) Btn("消す") { a.clearClaudeKey(); say("Claude の API キーを消しました") }
+    }
+    Note("API キーは Claude Console (platform.claude.com) の API keys で作り、コピーしてから「クリップボードから保存」を押します。キーは画面に出さず、Android の Keystore で暗号化してこの端末だけに保存し、保存後にクリップボードを空にします。キーを送るのは Anthropic (api.anthropic.com) だけです。")
+    Text("画像を読むモデル", color = Palette.Label, fontSize = 13.sp)
+    ClaudeModel.entries.forEach { m -> Choice(m.label, null, model == m) { a.setClaudeModel(m) } }
+    Btns {
+        Btn("試す") {
+            if (check != null && check?.first == null) return@Btn   // 確かめている途中
+            check = null to "確かめています…"
+            scope.launch { check = g.vision.checkClaude() }
+        }
+    }
+    check?.let { (ok, text) -> Line("試した結果", text, ok) }
+    Note("「試す」は、文章だけの小さな依頼で、キーと選んだモデルが使えるかを確かめます (画面の画像は送りません)。")
+    Note("Claude を選ぶと、画面の画像は Anthropic の Claude に送られます (「画面の画像を AI に渡す」がオンのときだけ)。料金は、あなたの API の利用分としてかかります (Claude Console で見られます)。")
+}
+
+/** 選ぶ行 (丸いボタンと名前。説明があれば下に)。探すときは名前と説明で絞る */
+@Composable
+private fun Choice(label: String, desc: String?, selected: Boolean, onClick: () -> Unit) {
+    if (!shown(label, desc.orEmpty())) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = selected, onClick = onClick)
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Color.White, fontSize = 15.sp)
+            if (desc != null) Text(desc, color = Palette.Muted, fontSize = 12.sp, lineHeight = 17.sp)
+        }
     }
 }
 

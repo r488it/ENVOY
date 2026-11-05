@@ -73,6 +73,7 @@ internal object CardTitle {
     const val TUNNEL = "トンネル (スマホの中の tunnel-client)"
     const val CONTROL = "端末の操作の方式"
     const val OVERLAY = "他のアプリの上に表示"
+    const val VISION = "画面の理解（AI で画面を読む）"
     const val PHONE = "電話の許可"
     const val ARM = "AgentARM (スマホを載せる腕)"
     const val AGENTS = "エージェントの権限"

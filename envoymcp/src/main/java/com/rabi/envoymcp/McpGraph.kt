@@ -154,8 +154,10 @@ class McpGraph(val context: Context) {
         unlimited = { settings.devNoAgentLimits })
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
-    /** 画面の画像を AI に読ませ、説明と押せそうなもの (位置つき) を文章にする */
-    val vision = ScreenVision(auth)
+    /** 画面の理解で Claude を使うときの、本人の Anthropic の API キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
+    val claudeKey = SecureStore(context, "anthropic_api_key")
+    /** 画面の画像を AI (設定で ChatGPT か Claude) に読ませ、説明と押せそうなもの (位置つき) を文章にする */
+    val vision = ScreenVision(auth, settings, claudeKey)
     /** スマホの中の tunnel-client と、その実行用キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
     val tunnel = TunnelClient(context)
     val tunnelKey = SecureStore(context, "tunnel_runtime_key")

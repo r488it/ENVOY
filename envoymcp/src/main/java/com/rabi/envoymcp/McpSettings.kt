@@ -69,10 +69,23 @@ class McpSettings(context: Context) {
         get() = ControlMode.entries.firstOrNull { it.id == p.getString("control_mode", null) } ?: ControlMode.ADB
         set(v) = p.edit { putString("control_mode", v.id) }
 
-    /** 画面の画像を ChatGPT に渡してよいか (最初はオン。設定で切れる) */
+    /**
+     * 画面の画像を AI に渡してよいか (最初はオン。設定で切れる)。get_screenshot (ChatGPT へ) と、
+     * look_at_screen (画面の理解の AI へ。ChatGPT でも Claude でも) の両方を止める
+     */
     var allowScreenshots: Boolean
         get() = p.getBoolean("allow_screenshots", true)
         set(v) = p.edit { putBoolean("allow_screenshots", v) }
+
+    /** 画面の理解 (look_at_screen) で、画面の画像を読む AI (最初は ChatGPT) */
+    var visionProvider: VisionProvider
+        get() = VisionProvider.from(p.getString("vision_provider", null))
+        set(v) = p.edit { putString("vision_provider", v.id) }
+
+    /** 画面の理解で Claude を使うときのモデル。API キーは SecureStore に別に置く (ここには置かない) */
+    var claudeModel: ClaudeModel
+        get() = ClaudeModel.from(p.getString("claude_model", null))
+        set(v) = p.edit { putString("claude_model", v.id) }
 
     /** ChatGPT の音声モードの真ん中に、リゲルを重ねる */
     var voiceStage: Boolean
@@ -255,4 +268,27 @@ enum class ControlMode(val id: String, val label: String) {
     ADB("adb", "ADB のみ"),
     HYBRID("hybrid", "ADB + ユーザー補助"),
     A11Y("a11y", "ユーザー補助のみ"),
+}
+
+/** 画面の理解 (look_at_screen) で画面の画像を読む AI。ChatGPT は Sign in with ChatGPT、Claude は本人の Anthropic の API キー */
+enum class VisionProvider(val id: String, val label: String) {
+    CHATGPT("chatgpt", "ChatGPT（Sign in with ChatGPT）"),
+    CLAUDE("claude", "Claude（API キー）");
+
+    companion object {
+        /** 保存した値から (無い・知らない値なら ChatGPT) */
+        fun from(id: String?): VisionProvider = entries.firstOrNull { it.id == id } ?: CHATGPT
+    }
+}
+
+/** 画面の理解で使う Claude のモデル。effort は考える深さ (output_config.effort) を指定できるか */
+enum class ClaudeModel(val id: String, val label: String, val effort: Boolean) {
+    SONNET("claude-sonnet-5-5", "Claude Sonnet 5.5（おすすめ）", true),
+    OPUS("claude-opus-5-5", "Claude Opus 5.5（いちばん賢い・遅め）", true),
+    HAIKU("claude-haiku-4-5-20251001", "Claude Haiku 4.5（速い・安い）", false);
+
+    companion object {
+        /** 保存した値から (無い・知らない値なら Sonnet) */
+        fun from(id: String?): ClaudeModel = entries.firstOrNull { it.id == id } ?: SONNET
+    }
 }

@@ -6,12 +6,17 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.util.Base64
+import com.rabi.envoymcp.McpSettings
+import com.rabi.envoymcp.VisionProvider
 import com.rabi.envoymcp.auth.AiException
 import com.rabi.envoymcp.auth.ChatGptAuth
+import com.rabi.envoymcp.auth.ClaudeClient
 import com.rabi.envoymcp.auth.OpenAiClient
 import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.core.SecureStore
 import com.rabi.envoymcp.observe.Bounds
 import com.rabi.envoymcp.observe.Observation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -19,14 +24,22 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
 /**
- * 画面の画像を、ENVOY MCP の中で AI (Sign in with ChatGPT のモデル) に読ませる。
+ * 画面の画像を、ENVOY MCP の中で AI に読ませる。読む AI は設定で選ぶ (Sign in with ChatGPT のモデルか、本人の API キーの Claude)。
  * ChatGPT のアプリは、MCP の道具が返した画像をモデルに見せない (OpenAI の回答) ので、
  * ここで画像を文章 (画面の説明と、押せそうなものの名前・位置) にしてから ChatGPT に返す。
  * - 画像には部品の枠と番号を書き込み、部品の一覧と一緒に渡す (部品の一覧にあるものは番号で答えさせる。位置が正確になる)
  * - 部品の一覧に無いもの (アイコンだけのボタン・Web やゲームの画面・ユーザー補助に見えない部品) は位置で答えさせる
- * - 送るのは、本人が「画面の画像を ChatGPT に渡す」をオンにしているときだけ (呼ぶ側で確かめる)
+ * - ChatGPT でも Claude でも、送る文章と答えの読み方 (parseVision) は同じ。look_at_screen が返す形は変わらない
+ * - 送るのは、本人が「画面の画像を AI に渡す」をオンにしているときだけ (呼ぶ側で確かめる)
  */
-class ScreenVision(private val auth: ChatGptAuth, private val client: OpenAiClient = OpenAiClient()) {
+class ScreenVision(
+    private val auth: ChatGptAuth,
+    private val settings: McpSettings,
+    /** Claude の API キー (本人が設定で保存したもの) */
+    private val claudeKey: SecureStore,
+    private val client: OpenAiClient = OpenAiClient(),
+    private val claude: ClaudeClient = ClaudeClient(),
+) {
     /** 押せそうなもの。bounds は画面のピクセル */
     data class Target(val visualId: String, val label: String, val kind: String, val elementId: Int?, val bounds: Bounds, val commit: Boolean)
     data class Result(val summary: String, val targets: List<Target>)
@@ -36,13 +49,17 @@ class ScreenVision(private val auth: ChatGptAuth, private val client: OpenAiClie
     /** 考える深さ (reasoning.effort) を浅くして送るか (対応していないモデルなら、外して以後は付けない) */
     @Volatile private var lowEffort = true
 
-    suspend fun look(o: Observation): Result {
+    suspend fun look(o: Observation): Result =
+        if (settings.visionProvider == VisionProvider.CLAUDE) lookClaude(o) else lookChatGpt(o)
+
+    /** Sign in with ChatGPT のモデルで読む */
+    private suspend fun lookChatGpt(o: Observation): Result {
         val png = o.screenshotPng ?: throw VisionException("画面の画像がありません")
         val model = auth.status.value.selectedModel ?: throw VisionException("ChatGPT のモデルが選ばれていません (ENVOY MCP の設定で選んでください)")
         val (img, iw, ih) = withContext(Dispatchers.Default) { mark(png, o) }
         val sw = o.screenW.takeIf { it > 0 } ?: iw
         val sh = o.screenH.takeIf { it > 0 } ?: ih
-        val text = "画像の大きさ: ${iw}x$ih ピクセル\n部品の一覧 (番号 id、位置 b は画面のピクセル。画像には枠と番号を書き込んである):\n" + o.toModelJson(MAX_ELEMENTS)
+        val text = prompt(o, iw, ih)
         val user = JSONObject().put("role", "user").put("content", JSONArray()
             .put(JSONObject().put("type", "input_text").put("text", text))
             .put(JSONObject().put("type", "input_image").put("image_url", "data:image/jpeg;base64," + Base64.encodeToString(img, Base64.NO_WRAP))))
@@ -65,6 +82,52 @@ class ScreenVision(private val auth: ChatGptAuth, private val client: OpenAiClie
         RabiLog.i("vision", "model ${System.currentTimeMillis() - t0}ms (effort ${if (lowEffort) EFFORT else "none"})")
         return parseVision(out, iw, ih, sw, sh)
     }
+
+    /**
+     * Claude (本人の API キー) で読む。画像は長辺 1280px 以下 (画面を撮る所で縮めている) なので、
+     * Claude 側で縮められず、答えの位置は画像のピクセルのまま
+     */
+    private suspend fun lookClaude(o: Observation): Result {
+        val png = o.screenshotPng ?: throw VisionException("画面の画像がありません")
+        val key = claudeKey.read() ?: throw VisionException(NO_CLAUDE_KEY)
+        val m = settings.claudeModel
+        val (img, iw, ih) = withContext(Dispatchers.Default) { mark(png, o) }
+        val sw = o.screenW.takeIf { it > 0 } ?: iw
+        val sh = o.screenH.takeIf { it > 0 } ?: ih
+        val t0 = System.currentTimeMillis()
+        val out = try {
+            // 考える深さは浅く (ChatGPT と同じ理由。指定できないモデルには付けない)
+            withContext(Dispatchers.IO) { claude.ask(key, m.id, INSTRUCTIONS, prompt(o, iw, ih), img, CLAUDE_MAX_TOKENS, if (m.effort) EFFORT else null) }
+        } catch (e: AiException) {
+            RabiLog.w("vision", "claude ${m.id} failed kind=${e.kind} status=${e.httpStatus} type=${e.code} request=${e.requestId}")
+            throw VisionException(e.userMessage)
+        }
+        RabiLog.i("vision", "claude ${m.id} ${System.currentTimeMillis() - t0}ms")
+        return parseVision(out, iw, ih, sw, sh)
+    }
+
+    /** Claude の API キーとモデルを、文章だけの小さな依頼で確かめる (設定の「試す」)。(使えるか, 画面に出す一言) */
+    suspend fun checkClaude(): Pair<Boolean, String> {
+        val key = claudeKey.read() ?: return false to "API キーが保存されていません"
+        val m = settings.claudeModel
+        return try {
+            withContext(Dispatchers.IO) { claude.ask(key, m.id, "短く答えてください。", "「OK」とだけ返してください。", null, CHECK_MAX_TOKENS, if (m.effort) EFFORT else null) }
+            true to "OK (${m.label} が使えます)"
+        } catch (e: AiException) {
+            RabiLog.w("vision", "claude check ${m.id} failed kind=${e.kind} status=${e.httpStatus} type=${e.code} request=${e.requestId}")
+            false to e.userMessage
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 設定の画面から呼ぶので、思わぬ失敗でも落とさず一言にする
+            RabiLog.w("vision", "claude check ${m.id} failed ${e.javaClass.simpleName}")
+            false to "確かめられませんでした (${e.javaClass.simpleName})"
+        }
+    }
+
+    /** モデルに渡す文章 (画像の大きさと部品の一覧)。ChatGPT と Claude で同じ */
+    private fun prompt(o: Observation, iw: Int, ih: Int): String =
+        "画像の大きさ: ${iw}x$ih ピクセル\n部品の一覧 (番号 id、位置 b は画面のピクセル。画像には枠と番号を書き込んである):\n" + o.toModelJson(MAX_ELEMENTS)
 
     /** 画像に部品の枠と番号を書き込み、JPEG にする。(JPEG, 幅, 高さ) */
     private fun mark(png: ByteArray, o: Observation): Triple<ByteArray, Int, Int> {
@@ -90,6 +153,10 @@ class ScreenVision(private val auth: ChatGptAuth, private val client: OpenAiClie
     companion object {
         private const val MAX_ELEMENTS = 80
         private const val EFFORT = "low"
+        /** Claude の答えの長さの上限 (考える分も含む。30 個の JSON が入りきる大きさ) */
+        private const val CLAUDE_MAX_TOKENS = 16_000
+        private const val CHECK_MAX_TOKENS = 1_024
+        const val NO_CLAUDE_KEY = "Claude の API キーが保存されていません (ENVOY MCP の設定の「スマホの操作」›「画面の理解」で保存してください)"
         private const val MAX_TARGETS = 30
         private val INSTRUCTIONS = """
             あなたはスマホの画面を読む係です。画面の画像と、画面の部品の一覧を受け取ります。画像には、部品の枠と番号 (部品の一覧の id) を書き込んであります。

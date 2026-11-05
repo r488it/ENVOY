@@ -8,11 +8,11 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** ChatGPT プラン利用での失敗の種類。復旧方法が異なるので区別する。 */
+/** AI の呼び出し（ChatGPT プラン・Claude の API）での失敗の種類。復旧方法が異なるので区別する。 */
 enum class AiErrorKind {
     /** 通信できない（機内モード・タイムアウト・ストリームの途切れ）。認証情報は保持する。 */
     NETWORK,
-    /** 認証が通らない・失効した。再ログインが必要。 */
+    /** 認証が通らない・失効した。再ログイン（Claude は API キーの保存し直し）が必要。 */
     AUTH,
     /** このユーザー・ワークスペースではプラン利用ができない。繰り返さない。 */
     NOT_ELIGIBLE,
@@ -34,10 +34,12 @@ class AiException(
     val requestId: String? = null,
     message: String,
     val param: String? = null,
+    /** 画面に出す一言を呼ぶ先で決めるとき（無ければ ChatGPT 向けの言い方）。 */
+    private val userText: String? = null,
 ) : Exception(message) {
     /** 画面に出す短い日本語。 */
     val userMessage: String
-        get() = when (kind) {
+        get() = userText ?: when (kind) {
             AiErrorKind.NETWORK -> "通信できませんでした"
             AiErrorKind.AUTH -> "ChatGPT の認証が切れました。設定から再ログインしてください"
             AiErrorKind.NOT_ELIGIBLE -> "このアカウントでは ChatGPT プランを利用できません"
