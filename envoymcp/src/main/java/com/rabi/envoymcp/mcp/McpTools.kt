@@ -5,7 +5,6 @@ import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.arm.ArmController
 import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
-import com.rabi.envoymcp.kids.KidsLesson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -23,7 +22,7 @@ import org.json.JSONObject
  * - 操作する: アプリ・ショートカット・クイック設定/通知を開く、タップ、文字入力、スクロール、戻る、ホーム、待つ
  * - 教える: 押す場所を指して見せる (押さない。押すのは本人)
  * - 部品: 動かす・直前の操作を部品として登録・覚えた部品を消す
- * - まなび: 子どものお勉強の問題を画面に出し、子どもが押すのを待つ (AI の先生)
+ * - まなび: 子どものお勉強の問題を画面に出し、子どもの答え (声・画面) を確かめる (AI の先生。どれも待たずに返る)
  * 安全の決まり:
  * - 子どもモードの間は、子どもモードで使える道具だけを出し、ほかは動かさずに断る (McpProtocol・AgentPolicy.KIDS_TOOLS)
  * - 送信・投稿・購入・削除・発信らしいボタンや設定のスイッチは、タップでも部品でも、スマホの承認画面で本人が承認してから押す
@@ -411,38 +410,37 @@ class McpTools(private val g: McpGraph) : ToolHost {
             params = props("part_id" to str("部品の ID")), required = listOf("part_id")) { partTools.deletePart(it) },
 
         // ---------------------------------------------------------------- まなび (子どものお勉強)
-        // 画面の操作はしないので、端末の操作の接続も、止められるリゲルも要らない。リゲルを操作中の顔にしない (quiet)。
-        // お勉強の画面を変えるので、読むだけの道具ではない
+        // どれも子どもを待たずに、すぐ返る (待っている間は AI が話せないため)。画面の操作はしないので、端末の操作の接続も、
+        // 止められるリゲルも要らない。リゲルを操作中の顔にしない (quiet)。お勉強の画面を変えるので、読むだけの道具ではない
         Tool("kids_start", "お勉強を始める",
-            "3 さいくらいの子どもとのお勉強 (まなび) を始めます。スマホにお勉強の画面を開き、topic の題で始めます " +
-                "(kazu: かず 1〜10、hiragana: ひらがな、tokei: とけい)。" +
+            "3 さいくらいの子どもとのお勉強 (まなび) を始めます。スマホにお勉強の画面を開きます。待たずに、すぐ返ります。" +
+                "topic なしで呼ぶと、画面に題を選ぶ大きなボタン (おうちの人が選んだ題だけ) を出して返すので、「どれにする？」と聞きます。" +
+                "子どもが声で言ったら、その題で kids_start(topic) を呼びます。画面で押したら、ENVOY がその題で最初の問題を出し、kids_answer() で分かります。" +
+                "topic を渡すと (kazu: かず 1〜10、hiragana: ひらがな、tokei: とけい)、その題で最初の問題を画面に出し、" +
+                "その問題 (read: 読む文・shown: 画面の絵・choices: 選ぶもの・answer: 正しい答え) を返します。" +
                 "level で難しさを決められます (かず 1〜2: 2 は 10 まで、ひらがな 1〜10: 1 が あ行・2 が か行・3 が さ行 …、とけい 1〜2: 2 は「〜じはん」も)。省略すると、前の続きの難しさです。" +
                 "子どもモードがオフなら、オンにします (オンの間は、まなびの道具と表情・腕の動き・会話を終える道具だけ使えます。切るのは、おうちの人がスマホで指紋などで確かめてから)。" +
                 "おうちの人が選んでいない題のとき・きょうのお勉強の時間を使い切ったときは、始めずにそう返します。ENVOY は読み上げません (話すのは AI)。",
             act = false, caption = "", adb = false, readOnly = false, quiet = true,
-            params = props("topic" to enumOf("題 (kazu: かず・hiragana: ひらがな・tokei: とけい)", "kazu", "hiragana", "tokei"),
-                "level" to int("難しさ (省略すると前の続き)")),
-            required = listOf("topic")) { kidsTools.start(it) },
-        Tool("kids_question", "お勉強の問題を出す",
-            "お勉強の問題を 1 つ作って画面に大きく出し、子どもが画面を押して選ぶのを待ちます (${KidsLesson.WAIT_MS / 1000} 秒まで)。" +
-                "返すのは、問題の文 (question)・画面に出した絵 (shown)・選ぶもの (choices)・正しい答え (answer)・子どもが選んだもの (chosen)・正しいか (correct)・星の数 (stars) です。" +
-                "ENVOY は読み上げません。問題もほめる言葉も、AI が話します。正しく選ぶと、ENVOY が画面に星とリゲルのうれしい顔を出します。" +
-                "問題を先に声で読みたいときは、wait=false で出して (すぐ戻ります)、問題をやさしく読み、same=true で待ちます。" +
-                "まちがえたときは、しからずに「もういちど やってみよう」と言い、same=true で同じ問題をもう一度待ちます。" +
-                "topic・level を省略すると、今の題と難しさです (子どもの答えに合わせて、ENVOY がやさしく変えます)。まだ始めていなければ始めます。",
-            act = false, caption = "", adb = false, readOnly = false, quiet = true, timeoutMs = KIDS_TIMEOUT_MS,
-            params = props("topic" to enumOf("題 (省略すると今の題)", "kazu", "hiragana", "tokei"),
-                "level" to int("難しさ (省略すると今の難しさ)"),
-                "same" to bool("true なら新しい問題を作らず、今の問題のまま待つ (省略すると false)"),
-                "wait" to bool("false なら問題を出してすぐ戻る (子どもが選ぶのは待たない。省略すると true)"))) { kidsTools.question(it) },
+            params = props("topic" to enumOf("題 (省略すると、子どもが画面で選ぶ)", "kazu", "hiragana", "tokei"),
+                "level" to int("難しさ (省略すると前の続き)"))) { kidsTools.start(it) },
+        Tool("kids_answer", "子どもの答えを確かめる",
+            "子どもの答えを確かめます。待たずに、すぐ返ります。1 問に 1 回呼びます。" +
+                "子どもが声で答えたら、answer にその言葉を入れて呼びます (例: 「3」「さん」「みっつ」「あ」「3じ」「3じはん」。言い方のちがいは ENVOY が受け付けます)。" +
+                "ENVOY が今の問題と比べて正しいかを決め、正しければ画面に星を出し、次の問題 (read・shown・choices・answer) も同じ結果で返します (少しして画面も次の問題になります)。" +
+                "まちがいなら、同じ問題のまま、ヒント (hint) を返します。答えとして分からないときは unclear を返します。5 もん正しく答えると、まとめ (summary) を返し、おわりの画面を出します。" +
+                "answer なしで呼ぶと、前に確かめてから子どもが画面で押したもの (と次の問題) を返します。まだなら status が waiting で、今の問題を返すので、会話を続けます。" +
+                "子どもが「おした」と言ったとき・少し間があいたときに使います。画面で題を選んだときも、これで分かります。",
+            act = false, caption = "", adb = false, readOnly = false, quiet = true,
+            params = props("answer" to str("子どもが声で言った答え (画面で押したかを確かめるだけなら省略)"))) { kidsTools.answer(it) },
         Tool("kids_cheer", "子どもをほめる",
             "スマホのリゲルがうれしい顔をして、画面に星を出します。AgentARM につながっていれば、腕もうれしい動きをします (つながっていなければ画面だけ)。" +
-                "子どもががんばったとき・正しく答えたときに、もっとほめたいときに使います。",
+                "正しく答えたときは ENVOY が星と顔を出すので、とくべつにほめたいときだけ使います。",
             act = false, caption = "", adb = false, readOnly = false, quiet = true) { kidsTools.cheer() },
         Tool("kids_end", "お勉強をおしまいにする",
             "お勉強をおしまいにして、画面に星の数と「きょうも がんばったね」を出します。" +
                 "まとめ (出した問題の数 questions・1 回で正しく選べた数 correct・星の数 stars) を返し、したことの記録に残します。" +
-                "5 もんくらいで、子どもが疲れる前に使います。",
+                "5 もんの途中でやめるときに使います (5 もん終わったときは、kids_answer がまとめを返します)。",
             act = false, caption = "", adb = false, readOnly = false, quiet = true) { kidsTools.end() },
     )
     private val byName = tools.associateBy { it.name }
@@ -568,10 +566,8 @@ class McpTools(private val g: McpGraph) : ToolHost {
         const val ARM_MOVE_TIMEOUT_MS = 45_000L
         /** 本人が押すのを待つ道具の時間の区切り (待つ長さの上限 60 秒より少し長く) */
         private const val WAIT_USER_TIMEOUT_MS = 70_000L
-        /** お勉強の問題の道具の時間の区切り (子どもが選ぶのを待つ 30 秒より少し長く) */
-        private const val KIDS_TIMEOUT_MS = KidsLesson.WAIT_MS + 10_000L
         /** したことの記録で、最初は隠す道具 (何度も呼ばれるもの) */
-        private val QUIET_KIND = setOf("rigel_expression", "kids_question", "kids_cheer", "kids_end")
+        private val QUIET_KIND = setOf("rigel_expression", "kids_answer", "kids_cheer", "kids_end")
         private const val ADB_CONNECT_MS = 8_000L
         /** 動いても指さしを消さない道具 (画面を読む・待つ・表情を見せるだけ) */
         private val KEEP_POINT = setOf("get_state", "read_screen", "get_screenshot", "look_at_screen", "wait", "wait_for_user", "rigel_expression")

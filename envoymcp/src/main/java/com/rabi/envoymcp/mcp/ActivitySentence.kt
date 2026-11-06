@@ -109,8 +109,10 @@ internal object ActivitySentence {
             "save_part" -> s(clean(args.optString("name"))?.let { "部品「$it」を" } ?: "部品を", V("登録した", "登録しようとした"))
             "delete_part" -> s((if (done) quoted(first) else null)?.let { "部品「$it」を" } ?: "部品を", V("消した", "消そうとした"))
             // お勉強: 題だけ (子どもが選んだもの・声は残さない。まとめは KidsLesson が 1 行で残す)
-            "kids_start" -> s(Topic.byId(args.optString("topic"))?.let { "お勉強（${it.label}）を" } ?: "お勉強を", START)
-            "kids_question" -> s("お勉強の問題を", V("出した", "出そうとした"))
+            "kids_start" -> Topic.byId(args.optString("topic")).let { t ->
+                s(if (t != null) "お勉強（${t.label}）を" else "お勉強を", START) + if (t == null && args.optString("topic").isBlank()) "（題は子どもが選ぶ）" else ""
+            }
+            "kids_answer" -> s("お勉強の答えを", V("確かめた", "確かめようとした"))
             "kids_cheer" -> s("子どもを", V("ほめた", "ほめようとした"))
             "kids_end" -> s("お勉強を", V("おしまいにした", "おしまいにしようとした"))
             else -> title.ifBlank { tool }

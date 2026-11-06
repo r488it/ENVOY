@@ -32,7 +32,6 @@ internal fun KidsCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String)
     val rules = remember(tick) { g.settings.kidsRules }
     val left = remember(tick) { g.kids.minutesLeft() }
     val used = remember(tick) { g.kids.minutesUsed() }
-    val agent = remember(tick) { g.settings.voiceAgent }
     Card(CardTitle.KIDS, if (on) "オン・のこり $left 分" else "オフ", if (on) true else null, icon = Icons.Rounded.ChildCare) {
         Note("3 さいくらいの子どもが、リゲルと「かず」「ひらがな」「とけい」をお勉強できます。絵と字は、アプリが自分で描きます。")
         if (shown(START)) Button(onClick = { a.startKids() }, modifier = Modifier.fillMaxWidth().height(64.dp)) {
@@ -60,10 +59,10 @@ internal fun KidsCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String)
         Sub("すすめ方")
         Choice("ひとりで (スマホの中だけ)", "リゲルが問題を読み上げ、子どもが画面を押して答えます。声も答えも、スマホの外には何も送りません。",
             !rules.aiTeacher) { a.setKidsRules(rules.copy(aiTeacher = false), say) }
-        Choice("AI の先生 (${agent.label})", "リゲルのタップで、話し相手の AI の音声モードを、子どもの先生として開きます。AI が話しかけ、問題はスマホの画面に出ます。",
+        Choice("AI の先生 (ChatGPT の音声モード)", "リゲルのタップで、ChatGPT の音声モードを、子どもの先生として開きます。ChatGPT が会話しながら問題を出し、問題はスマホの画面にも出ます。子どもは声でも、画面を押しても答えられます。話し相手の AI を Claude にしていても、先生は ChatGPT です (自分から話しかけられ、考えていることを読み上げないので、小さな子どもとの会話に向いています)。",
             rules.aiTeacher) { a.setKidsRules(rules.copy(aiTeacher = true), say) }
-        if (rules.aiTeacher) Warn("AI の先生では、子どもの声が、選んだ AI (${agent.label}) に届きます。ENVOY から AI に渡すのは、問題と、子どもが選んだ答えだけです (名前などは渡しません)。")
-        Note("Claude を先生にするときは、「安心 (承認)」の「エージェントの権限」で、Claude (コネクター) の「読むだけ」を外し、「まなび」を許してください (まなびの道具は画面を変えるので、読むだけの道具ではありません)。")
+        if (rules.aiTeacher) Warn("AI の先生では、子どもの声が ChatGPT に届きます。ENVOY から ChatGPT に渡すのは、問題と、子どもが選んだ答えだけです (名前などは渡しません)。")
+        Note("ChatGPT のアプリが入っていないとき・きょうの時間を使い切ったときは、ひとりでのお勉強を開きます。")
 
         Sub("画面の固定")
         Toggle("ひとりでお勉強する画面を固定する (アプリの固定)", rules.pin) { a.setKidsRules(rules.copy(pin = it), say) }

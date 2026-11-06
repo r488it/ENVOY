@@ -71,7 +71,8 @@ import kotlinx.coroutines.flow.first
 /**
  * お勉強の画面 (子どもモード)。上にリゲル、まん中に大きな問題、下に大きな選ぶボタン (2〜4 こ)。
  * - ひとりで: 題を選ぶ (かず・ひらがな・とけい) → 5 もん → 星と「きょうも がんばったね」。リゲルが読み上げる
- * - AI の先生: 道具 (kids_question) が出した問題を見せ、子どもが押したものを道具に返す。読み上げない
+ * - AI の先生: 道具 (kids_start・kids_answer) が出した問題を見せる。子どもは声でも、押しても答えられる
+ *   (押したら、すぐ星・顔・「もういちど」を出し、次の kids_answer で先生に伝わる)。読み上げない (話すのは AI)
  * - 時間になったら「きょうは ここまで」
  * - ひとりでお勉強するときは、Android のアプリの固定 (startLockTask) で画面を固定する (おうちの人が設定でオンにしているとき)。
  *   端末の管理者のアプリではないので、Android が「アプリを固定しますか？」と聞く。AI の先生のときは、AI のアプリの声を聞くので固定しない
@@ -192,8 +193,7 @@ private fun KidsScreen(g: McpGraph, voice: KidsVoice, onParent: () -> Unit) {
                     signals = AvatarSignals(expression = st.expression, expressionSeq = st.expressionSeq, expressionHoldMs = st.expressionHoldMs))
             }
             when (v.mode) {
-                KidsLesson.Mode.PICK -> PickBody(topics) { g.kids.startAlone(it) }
-                KidsLesson.Mode.WAIT -> WaitBody(v.message)
+                KidsLesson.Mode.PICK -> PickBody(topics) { g.kids.pickTopic(it) }
                 KidsLesson.Mode.ASK -> AskBody(v, onTap = { g.kids.tap(it) }, onSay = say)
                 KidsLesson.Mode.END -> EndBody(v, onAgain = if (v.ai) null else ({ g.kids.pick() }))
                 KidsLesson.Mode.TIME_UP -> TimeUpBody()
@@ -225,14 +225,6 @@ private fun ColumnScope.PickBody(topics: List<Topic>, onPick: (Topic) -> Unit) {
                 Text(t.label, color = KidsColors.Text, fontSize = 46.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp))
             }
         }
-    }
-}
-
-/** AI の先生が話している間 */
-@Composable
-private fun ColumnScope.WaitBody(message: String) {
-    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Text(message, color = KidsColors.Text, fontSize = 34.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 46.sp)
     }
 }
 

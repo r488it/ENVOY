@@ -285,11 +285,11 @@ class McpSettings(context: Context) {
         set(v) = p.edit { putStringSet("kids_topics", v.map { it.id }.toSet()) }
 
     /**
-     * AI の先生 (最初はオフ)。オンなら、子どもモードのリゲルのタップで、話し相手の AI の音声モードを、子どもの先生として開く
-     * (子どもの声は、その AI に届く)。オフなら、お勉強はスマホの中だけで動き、外には何も送らない
+     * AI の先生 (最初はオン)。オンなら、子どもモードのリゲルのタップで、ChatGPT の音声モードを、子どもの先生として開く
+     * (子どもの声は ChatGPT に届く)。オフなら、お勉強はスマホの中だけで動き、外には何も送らない
      */
     var kidsAiTeacher: Boolean
-        get() = p.getBoolean("kids_ai_teacher", false)
+        get() = p.getBoolean("kids_ai_teacher", true)
         set(v) = p.edit { putBoolean("kids_ai_teacher", v) }
 
     /** ひとりでお勉強する画面を、Android のアプリの固定で固定する (最初はオン) */

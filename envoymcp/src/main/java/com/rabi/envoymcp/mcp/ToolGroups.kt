@@ -17,7 +17,7 @@ object ToolGroups {
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
             "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "arm_stop",
         ),
-        KIDS to listOf("kids_start", "kids_question", "kids_cheer", "kids_end"),
+        KIDS to listOf("kids_start", "kids_answer", "kids_cheer", "kids_end"),
     )
     const val OTHER = "その他"
 

@@ -80,14 +80,7 @@ class KidsSession(
         if (solved || i !in q.choices.indices || i in wrongPicks) return null
         if (i != q.answer) {
             wrongPicks += i
-            var down = false
-            if (!missed) {
-                missed = true
-                streak = 0
-                missRun++
-                if (missRun >= MISS_DOWN) { missRun = 0; down = shift(-1) }
-            }
-            return Outcome(correct = false, firstTry = false, levelDown = down)
+            return wrongOnce()
         }
         solved = true
         stars++
@@ -98,6 +91,27 @@ class KidsSession(
         var up = false
         if (streak >= STREAK_UP) { streak = 0; up = shift(+1) }
         return Outcome(correct = true, firstTry = true, levelUp = up)
+    }
+
+    /**
+     * 選ぶものに無い答えを言った (声で答えたとき。まちがいとして数え、選択肢には印を付けない)。
+     * 今の問題が無い・もう正しく選んだなら null
+     */
+    fun miss(): Outcome? {
+        if (current == null || solved) return null
+        return wrongOnce()
+    }
+
+    /** まちがえた: その問題で初めてなら、続けて 1 回でできた数を 0 にし、まちがいのあった問題の数を数える (続いたら難しさを下げる) */
+    private fun wrongOnce(): Outcome {
+        var down = false
+        if (!missed) {
+            missed = true
+            streak = 0
+            missRun++
+            if (missRun >= MISS_DOWN) { missRun = 0; down = shift(-1) }
+        }
+        return Outcome(correct = false, firstTry = false, levelDown = down)
     }
 
     /** 今の題の難しさを 1 つ上げる・下げる (変わったら true) */

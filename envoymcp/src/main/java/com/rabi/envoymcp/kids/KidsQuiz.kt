@@ -22,7 +22,7 @@ enum class Topic(val id: String, val label: String, val maxLevel: Int) {
 
 /** 問いの絵 (画面に Compose で描く。写真や借りた絵は使わない) */
 sealed interface Visual {
-    /** 数を表す丸を n こ (kind で色を変える) */
+    /** 数えるものを n こ (kind で、りんご・ほし・みかん・ボールを描き分ける。QuestionMaker.ITEMS) */
     data class Dots(val n: Int, val kind: Int = 0) : Visual
     /** 大きな数字 */
     data class Numeral(val n: Int) : Visual
@@ -52,26 +52,32 @@ data class Question(
 ) {
     val answerLabel: String get() = choices[answer].label
 
-    /** AI の先生に渡す形 (問い・選ぶもの・正しい答え) */
+    /** 画面に出した絵の言い方 (AI が会話に使う。例: りんごが 3 こ) */
+    val shown: String get() = when (val v = visual) {
+        is Visual.Dots -> "${QuestionMaker.item(v.kind)}が ${v.n} こ"
+        is Visual.Numeral -> "すうじの ${v.n}"
+        is Visual.Clock -> "とけいが ${QuestionMaker.clockLabel(v.h, v.m)}"
+        Visual.None -> ""
+    }
+
+    /** AI の先生に渡す形 (画面の問い・読む文・画面の絵・選ぶもの・正しい答え) */
     fun toJson(): JSONObject = JSONObject()
-        .put("topic", topic.id).put("level", level).put("question", text)
+        .put("topic", topic.id).put("level", level).put("question", text).put("read", speech)
         .put("choices", JSONArray(choices.map { it.label })).put("answer", answerLabel)
-        .apply {
-            when (val v = visual) {
-                is Visual.Dots -> put("shown", "まるが ${v.n} こ")
-                is Visual.Numeral -> put("shown", "すうじの ${v.n}")
-                is Visual.Clock -> put("shown", "とけいが ${QuestionMaker.clockLabel(v.h, v.m)}")
-                Visual.None -> {}
-            }
-        }
+        .apply { if (shown.isNotEmpty()) put("shown", shown) }
 }
 
 /** 問いを作る (題と難しさごと。試験では種を決めた Random を渡す) */
 object QuestionMaker {
     /** ひらがなの行 (レベル 1 が あ行、2 が か行 …) */
     val ROWS = listOf("あいうえお", "かきくけこ", "さしすせそ", "たちつてと", "なにぬねの", "はひふへほ", "まみむめも", "やゆよ", "らりるれろ", "わをん")
-    /** 丸の色の種類の数 */
+    /** 数えるもの (Visual.Dots の kind ごと。画面に描くものと同じ) */
+    val ITEMS = listOf("りんご", "ほし", "みかん", "ボール")
+    /** 数えるものの種類の数 */
     const val DOT_KINDS = 4
+
+    /** 数えるものの名前 */
+    fun item(kind: Int): String = ITEMS[kind.mod(ITEMS.size)]
 
     fun make(topic: Topic, level: Int, random: Random): Question {
         val lv = level.coerceIn(1, topic.maxLevel)

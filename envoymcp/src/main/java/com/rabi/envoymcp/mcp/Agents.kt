@@ -111,8 +111,8 @@ object AgentPolicy {
 
     /** 子どもモードの間に、ほかの道具を頼まれたときの返事 (道具の失敗として返す。AI が読んで、子どもとのお勉強を続けられる) */
     fun kidRefusal(): ToolResult =
-        failed("今は子どもモードです。子どもモードの間は、まなびの道具 (kids_start・kids_question・kids_cheer・kids_end) と、" +
-            "rigel_expression・arm_motion・arm_dance・end_voice_chat だけ使えます。この道具は使えません。子どもとのお勉強を続けてください。",
+        failed("今は子どもモードです。子どもモードの間は、${KIDS_TOOLS.joinToString("・")} だけ使えます。" +
+            "この道具は使えません。子どもとのお勉強を続けてください。",
             JSONObject().put("permitted", false).put("kid_mode", true))
 
     /** 権限の一行のまとめ:「すべて」「読むだけ」「読むだけ・画面とアプリだけ」 */

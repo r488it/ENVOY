@@ -92,11 +92,13 @@ class ActivitySentenceTest {
     /** お勉強の道具は題だけを残す (子どもが選んだもの・正しい答えは残さない)。まとめは「まなび（かず）を 5 もん した（4 もん せいかい）」 */
     @Test fun kidsLessons() {
         assertEquals("お勉強（とけい）を始めた", build("kids_start", args("topic" to "tokei")))
+        assertEquals("お勉強を始めた（題は子どもが選ぶ）", build("kids_start", args()))
         assertEquals("お勉強を始めようとした", build("kids_start", args("topic" to "eigo"), done = false))
-        val picked = ToolResult("子どもが「3じはん」を選びました。\n{}", JSONObject().put("chosen", "3じはん").put("answer", "4じ"))
-        val s = build("kids_question", args("same" to true), picked)
-        assertEquals("お勉強の問題を出した", s)
-        assertFalse(s.contains("3じ") || s.contains("4じ"))
+        // 子どもの答え (声で言ったもの・選んだもの) と正しい答えは残さない
+        val checked = ToolResult("ざんねん、ちがいました (声で「3じはん」)。\n{}", JSONObject().put("chosen", "3じはん").put("answer", "4じ"))
+        val s = build("kids_answer", args("answer" to "さんじはん"), checked)
+        assertEquals("お勉強の答えを確かめた", s)
+        assertFalse(s.contains("3じ") || s.contains("4じ") || s.contains("さんじ"))
         assertEquals("子どもをほめた", build("kids_cheer", args()))
         assertEquals("お勉強をおしまいにした", build("kids_end", args()))
         val sum = Summary(listOf(Topic.KAZU), 5, 4, 5)

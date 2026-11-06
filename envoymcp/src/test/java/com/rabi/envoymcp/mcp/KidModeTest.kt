@@ -20,7 +20,7 @@ class KidModeTest {
         val refusedInKidMode = ArrayList<String>()
         private val tools = listOf(
             "get_state" to true, "tap" to false, "type_text" to false, "call_phone" to false, "rigel_call" to false, "share_photo" to false,
-            "open_app" to false, "run_part" to false, "kids_start" to false, "kids_question" to false, "kids_cheer" to false, "kids_end" to false,
+            "open_app" to false, "run_part" to false, "kids_start" to false, "kids_answer" to false, "kids_cheer" to false, "kids_end" to false,
             "rigel_expression" to false, "arm_motion" to false, "arm_dance" to false, "end_voice_chat" to false, "mystery" to true,
         )
         override fun list(): JSONArray = JSONArray().apply {
@@ -106,7 +106,7 @@ class KidModeTest {
         val a = agents.add()
         assertEquals(emptyList<String>(), names(a.token))
         agents.update(a.copy(readOnly = false, groups = setOf(ToolGroups.KIDS)))
-        assertEquals(listOf("kids_start", "kids_question", "kids_cheer", "kids_end"), names(a.token))
+        assertEquals(listOf("kids_start", "kids_answer", "kids_cheer", "kids_end"), names(a.token))
         assertFalse(call("kids_start", a.token).getJSONObject("result").getBoolean("isError"))
         assertTrue(call("rigel_expression", a.token).getJSONObject("result").getBoolean("isError"))
         assertEquals(listOf("rigel_expression"), tools.refused)
@@ -144,6 +144,6 @@ class KidModeTest {
     companion object {
         private const val TOKEN = "kidTOKEN234"
         /** 子どもモードで使える道具 (Tools の並び) */
-        private val KIDS = listOf("kids_start", "kids_question", "kids_cheer", "kids_end", "rigel_expression", "arm_motion", "arm_dance", "end_voice_chat")
+        private val KIDS = listOf("kids_start", "kids_answer", "kids_cheer", "kids_end", "rigel_expression", "arm_motion", "arm_dance", "end_voice_chat")
     }
 }

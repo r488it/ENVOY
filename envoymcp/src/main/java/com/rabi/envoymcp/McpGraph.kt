@@ -168,7 +168,7 @@ class McpGraph(val context: Context) {
         // 子どもモードの間は、どのエージェントにも、子どもモードで使える道具だけを出す
         kidMode = { settings.kidsMode })
     /** まなび (子どもモードのお勉強): お勉強の画面とまなびの道具が分け合う進み方・時間 */
-    val kids by lazy { KidsLesson(this) }
+    val kids by lazy { KidsLesson(KidsLesson.GraphHost(this), scope) }
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
     /** 画面の理解で Claude を使うときの、本人の Anthropic の API キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
@@ -545,22 +545,17 @@ class McpGraph(val context: Context) {
     }
 
     /**
-     * お勉強を開く (子どもモードのリゲルのタップ・腕の呼び名・設定の「お勉強をはじめる」)。
-     * - ひとりで (いつも): お勉強の画面を開く。スマホの中だけで動き、外には何も送らない
-     * - おうちの人が「AI の先生」を選んでいれば: 話し相手の AI の音声モードを、子どもの先生として開く
-     *   (Claude は先生の役の文を文字で送ってから音声モード。ChatGPT は最初の一言に先生の役の文を送る。いつもの最初の一言とお知らせは送らない)。
-     *   AI のアプリを開けないとき・きょうの時間を使い切ったときは、お勉強の画面を開く
+     * お勉強を開く (子どもモードのリゲルのタップ・腕の呼び名・ホームの「まなび」・設定の「お勉強をはじめる」)。
+     * - おうちの人が「AI の先生」を選んでいれば (最初はオン): ChatGPT の音声モードを、子どもの先生として開く。
+     *   話し相手の AI の設定にかかわらず ChatGPT にする (自分から話しかけられ、考えていることを読み上げないので、小さな子どもとの会話に向く)。
+     *   最初の一言に先生の役の文を送る (いつもの最初の一言とお知らせは送らない)
+     * - 「ひとりで」を選んでいるとき・ChatGPT を開けないとき・きょうの時間を使い切ったとき: お勉強の画面を開く (スマホの中だけで動き、外には何も送らない)
      */
     fun openKids(from: String) {
         RabiLog.i("graph", "kids ($from)")
         if (!settings.kidsAiTeacher || kids.over()) { kids.openAlone(); return }
-        val topics = settings.kidsTopics
-        if (useClaude()) {
-            if (!claudeVoice.open(KidsTeacher.claudePrompt(topics), KidsTeacher.CLAUDE_HINT)) { RabiLog.w("graph", "cannot open Claude"); kids.openAlone() }
-            return
-        }
         voiceStage.expectVoice()
-        voicePrimer.expectReport(KidsTeacher.chatGptReport(topics), withBase = false)
+        voicePrimer.expectReport(KidsTeacher.chatGptReport(settings.kidsTopics), withBase = false)
         if (!openChatGptVoice()) {
             RabiLog.w("graph", "cannot open ChatGPT")
             voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() }

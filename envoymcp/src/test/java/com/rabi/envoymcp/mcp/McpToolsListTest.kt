@@ -2,6 +2,7 @@ package com.rabi.envoymcp.mcp
 
 import com.rabi.envoymcp.McpGraph
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** tools/list の道具の名前と並び (ChatGPT に出す順。変えると接続先の見え方が変わる) */
@@ -34,23 +35,27 @@ class McpToolsListTest {
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
             "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "rigel_notify", "get_notices", "arm_stop",
             "run_part", "save_part", "delete_part",
-            "kids_start", "kids_question", "kids_cheer", "kids_end",
+            "kids_start", "kids_answer", "kids_cheer", "kids_end",
         ), names)
     }
 
     /**
      * まなびの道具は「まなび」のまとまりで、お勉強の画面を変えるので読むだけではない (読むだけのエージェントには出さない)。
+     * どれも引数なしで呼べる (kids_start は題なしで子どもが選ぶ、kids_answer は答えなしで画面で押したかを確かめる)。
      * 子どもモードで使える道具は、どれも本物の道具の一覧にある
      */
     @Test fun kidsToolsAreGroupedAndNotReadOnly() {
         val list = McpTools(graph()).list()
         val byName = (0 until list.length()).map { list.getJSONObject(it) }.associateBy { it.getString("name") }
-        for (t in listOf("kids_start", "kids_question", "kids_cheer", "kids_end")) {
+        for (t in listOf("kids_start", "kids_answer", "kids_cheer", "kids_end")) {
             assertEquals(ToolGroups.KIDS, ToolGroups.of(t))
-            assertEquals(false, byName.getValue(t).getJSONObject("annotations").getBoolean("readOnlyHint"))
-            assertEquals(false, byName.getValue(t).getJSONObject("annotations").getBoolean("destructiveHint"))
+            val annotations = byName.getValue(t).getJSONObject("annotations")
+            assertEquals(false, annotations.getBoolean("readOnlyHint"))
+            assertEquals(false, annotations.getBoolean("destructiveHint"))
+            assertEquals(0, byName.getValue(t).getJSONObject("inputSchema").getJSONArray("required").length())
         }
-        assertEquals(listOf("topic"), byName.getValue("kids_start").getJSONObject("inputSchema").getJSONArray("required").let { a -> (0 until a.length()).map { a.getString(it) } })
+        assertTrue(byName.getValue("kids_start").getJSONObject("inputSchema").getJSONObject("properties").has("topic"))
+        assertTrue(byName.getValue("kids_answer").getJSONObject("inputSchema").getJSONObject("properties").has("answer"))
         assertEquals(emptySet<String>(), AgentPolicy.KIDS_TOOLS - byName.keys)
     }
 

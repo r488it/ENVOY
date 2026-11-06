@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -36,8 +37,10 @@ internal object KidsColors {
     val StarOff = Color(0xFF3A4A72)
     val Right = Color(0xFF43A047)
     val Retry = Color(0xFFFFB74D)
-    /** 丸の色 (Visual.Dots の kind ごと) */
-    val Dots = listOf(Color(0xFFFF6B6B), Color(0xFFFFD54F), Color(0xFF66BB6A), Color(0xFF4FC3F7))
+    /** 数えるものの色 (Visual.Dots の kind ごと: りんご・ほし・みかん・ボール) */
+    val Dots = listOf(Color(0xFFE53935), Color(0xFFFFD54F), Color(0xFFFFA726), Color(0xFF4FC3F7))
+    val Leaf = Color(0xFF43A047)
+    val Stem = Color(0xFF6D4C41)
     /** 題ごとのボタンの色 (かず・ひらがな・とけい) */
     fun topic(t: Topic): Color = when (t) {
         Topic.KAZU -> Color(0xFF2E7D6B)
@@ -46,10 +49,14 @@ internal object KidsColors {
     }
 }
 
-/** 丸を n こ。5 こずつ 1 行に並べる (6 こ以上は 2 行。数えやすいように) */
+/**
+ * 数えるものを n こ。5 こずつ 1 行に並べる (6 こ以上は 2 行。数えやすいように)。
+ * kind で描き分ける: 0 りんご (赤い丸に、じくと葉)・1 ほし・2 みかん (だいだいの丸に葉)・3 ボール (青い丸)
+ */
 @Composable
 internal fun Dots(n: Int, kind: Int, modifier: Modifier = Modifier) {
-    val color = KidsColors.Dots[kind.mod(KidsColors.Dots.size)]
+    val k = kind.mod(KidsColors.Dots.size)
+    val color = KidsColors.Dots[k]
     Canvas(modifier) {
         if (n <= 0) return@Canvas
         val cols = min(n, 5)
@@ -62,9 +69,17 @@ internal fun Dots(n: Int, kind: Int, modifier: Modifier = Modifier) {
             val inRow = if (row == rows - 1) n - row * 5 else 5
             val left = (size.width - cell * min(inRow, cols)) / 2f
             val c = Offset(left + cell * (i % 5) + cell / 2f, top + cell * row + cell / 2f)
-            drawCircle(color, r, c)
-            // 少し光って見えるように (丸いつや)
-            drawCircle(Color.White.copy(alpha = 0.35f), r * 0.28f, c + Offset(-r * 0.35f, -r * 0.35f))
+            when (k) {
+                1 -> drawPath(starPath(c, r * 1.1f), color)
+                else -> {
+                    drawCircle(color, r, c)
+                    // 少し光って見えるように (丸いつや)
+                    drawCircle(Color.White.copy(alpha = 0.35f), r * 0.28f, c + Offset(-r * 0.35f, -r * 0.35f))
+                    // りんごは、じくと葉。みかんは葉だけ
+                    if (k == 0) drawLine(KidsColors.Stem, c + Offset(0f, -r * 0.85f), c + Offset(r * 0.08f, -r * 1.25f), strokeWidth = r * 0.14f, cap = StrokeCap.Round)
+                    if (k == 0 || k == 2) drawOval(KidsColors.Leaf, topLeft = c + Offset(r * 0.1f, -r * 1.3f), size = Size(r * 0.55f, r * 0.3f))
+                }
+            }
         }
     }
 }
