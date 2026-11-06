@@ -48,6 +48,8 @@ class McpProtocol(
     private val instructions: String,
     private val unlimited: () -> Boolean = { false },
     private val now: () -> Long = System::currentTimeMillis,
+    /** instructions に足す説明 (設定で変わるもの。空なら足さない) */
+    private val extraInstructions: () -> String = { "" },
 ) {
 
     /** 届いた本文 (JSON) を処理する。返事の要らないもの (通知・ChatGPT 側からの返事) は null。agent は呼んだエージェント (null なら絞らない) */
@@ -131,7 +133,7 @@ class McpProtocol(
             .put("protocolVersion", if (asked in SUPPORTED) asked else SUPPORTED.first())
             .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", false)))
             .put("serverInfo", JSONObject().put("name", "envoy-mcp").put("title", "ENVOY MCP").put("version", version))
-            .put("instructions", instructions)
+            .put("instructions", extraInstructions().let { if (it.isBlank()) instructions else "$instructions $it" })
     }
 
     private fun result(id: Any?, r: JSONObject) = JSONObject().put("jsonrpc", "2.0").put("id", id ?: JSONObject.NULL).put("result", r)

@@ -48,6 +48,16 @@ class McpServerTest {
         assertTrue(res.getJSONObject("capabilities").has("tools"))
     }
 
+    /** 設定で変わる説明は、最初の案内の後ろに足す (空なら足さない) */
+    @Test fun extraInstructionsAreAppended() = runTest {
+        var extra = ""
+        val s = McpServer(tools, port = { 0 }, token = { TOKEN }, log = log, extraInstructions = { extra })
+        suspend fun instructions() = JSONObject(String(s.respond(req(rpc("initialize", JSONObject()))).body)).getJSONObject("result").getString("instructions")
+        assertEquals(McpServer.INSTRUCTIONS, instructions())
+        extra = "音声で話しているときは、黙って道具を呼んでください。"
+        assertEquals(McpServer.INSTRUCTIONS + " " + extra, instructions())
+    }
+
     @Test fun unknownVersionGetsLatest() = runTest {
         val r = server.respond(req(rpc("initialize", JSONObject().put("protocolVersion", "1999-01-01"))))
         assertEquals(McpProtocol.SUPPORTED.first(), JSONObject(String(r.body)).getJSONObject("result").getString("protocolVersion"))

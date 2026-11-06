@@ -47,6 +47,8 @@ class McpServer(
     private val now: () -> Long = System::currentTimeMillis,
     /** 外 (Claude のコネクター) からつなぐときの OAuth (省略すると、外の名前の Host は断る) */
     private val oauth: OAuthServer? = null,
+    /** 最初の案内 (INSTRUCTIONS) に足す説明 (設定で変わるもの。空なら足さない) */
+    extraInstructions: () -> String = { "" },
 ) {
     sealed class State(val label: String) {
         data object Stopped : State("止まっています")
@@ -58,7 +60,7 @@ class McpServer(
     val state: StateFlow<State> = _state
     val running get() = _state.value is State.Running
 
-    private val protocol = McpProtocol(tools, BuildConfig.VERSION_NAME, INSTRUCTIONS, unlimited, now)
+    private val protocol = McpProtocol(tools, BuildConfig.VERSION_NAME, INSTRUCTIONS, unlimited, now, extraInstructions)
     private var socket: ServerSocket? = null
     private var scope: CoroutineScope? = null
 

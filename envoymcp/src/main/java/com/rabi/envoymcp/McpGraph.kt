@@ -160,7 +160,9 @@ class McpGraph(val context: Context) {
     val oauth = OAuthServer(domain = { if (settings.publicTunnelEnabled) settings.publicDomain else "" }, agents = agents,
         store = OAuthServer.Prefs(context), approve = { connectApproval.ask() }, activity = activity)
     val server = McpServer(tools, port = { settings.port }, token = { settings.token }, log = log, agents = agents,
-        unlimited = { settings.devNoAgentLimits }, oauth = oauth)
+        unlimited = { settings.devNoAgentLimits }, oauth = oauth,
+        // 話し相手が Claude のときは、音声で道具を使う間は黙るよう、最初の案内にも書く
+        extraInstructions = { if (settings.voiceAgent == VoiceAgent.CLAUDE) "音声で話しているときは、" + ClaudeVoice.QUIET_TOOLS else "" })
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
     /** 画面の理解で Claude を使うときの、本人の Anthropic の API キー (Android Keystore で暗号化して保存。画面・記録には出さない) */

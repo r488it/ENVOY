@@ -44,6 +44,11 @@ class ClaudeVoiceTest {
         assertTrue(plain, plain.endsWith(ClaudeVoice.REPLY_YES))
         assertFalse(plain, plain.contains(VoicePrimer.REPLY_HINT))
         assertTrue(plain, plain.contains("list_parts"))
+        // 「リゲル」が「逃げる」に聞こえても呼びかけとして受け取り、呼ばれただけなら短く答える
+        assertTrue(plain, plain.contains("「ねえ、逃げる」"))
+        assertTrue(plain, plain.contains("「リゲルだよ、こんにちは。」"))
+        // 道具を使う間は黙る
+        assertTrue(plain, plain.contains(ClaudeVoice.QUIET_TOOLS))
         val withNotices = ClaudeVoice.prompt("", "私が最初に何か話したら、まず次のお知らせを。\n〔中身〕")
         assertEquals(ClaudeVoice.PERSONA + " 私が最初に何か話したら、まず次のお知らせを。 〔中身〕 " + ClaudeVoice.REPLY_YES, withNotices)
     }
