@@ -97,9 +97,9 @@ internal fun OverlayCard(g: McpGraph, a: SettingsActivity, tick: Int) {
     }
 }
 
-/** 確定の前の承認: 承認画面と、指紋などの本人確認 */
+/** 確定の前の承認: 承認画面と、指紋などの本人確認 (オフにするときは、ご本人か確かめる) */
 @Composable
-internal fun ApprovalCard(g: McpGraph, a: SettingsActivity, tick: Int) {
+internal fun ApprovalCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String) -> Unit) {
     val bio = remember(tick) { g.settings.approvalBiometric }
     val approvalScreen = remember(tick) { g.settings.approvalScreen }
     Card("確定の前の承認", when {
@@ -108,8 +108,8 @@ internal fun ApprovalCard(g: McpGraph, a: SettingsActivity, tick: Int) {
         bio -> "指紋など"
         else -> "承認なし"
     }, approvalScreen || bio, icon = Icons.Rounded.Fingerprint) {
-        Toggle("確定の前に承認画面を出す", approvalScreen) { a.setApprovalScreen(it) }
-        Toggle("承認のときに指紋などの本人確認をする", bio) { a.setApprovalBiometric(it) }
+        Toggle("確定の前に承認画面を出す", approvalScreen) { a.setApprovalScreen(it, say) }
+        Toggle("承認のときに指紋などの本人確認をする", bio) { a.setApprovalBiometric(it, say) }
         Line("承認", when {
             approvalScreen && bio -> "承認画面のあと、指紋など"
             approvalScreen -> "承認画面で「確認して実行」"
@@ -117,6 +117,7 @@ internal fun ApprovalCard(g: McpGraph, a: SettingsActivity, tick: Int) {
             else -> "なし (ChatGPT がそのまま確定します)"
         }, if (!approvalScreen && !bio) false else true)
         Note("送信・投稿・購入・削除・発信らしいボタンと設定のスイッチを押す前の確認です。承認画面では内容を見て「確認して実行」、指紋などは指紋・顔・PIN で確かめます。承認画面をオフにして指紋などだけオンにすると、確定しようとしている画面のまま確認を出します (何を確定するかは確認の画面に出ます)。どちらもオフにすると、確認なしで ChatGPT がそのまま確定します (聞き違いや、Web ページ・メッセージに仕込まれた文にだまされても止まりません)。ChatGPT からは承認できません (指紋などは本人だけ。承認画面は ENVOY MCP 自身の画面なので操作しない・自分で送った押しは受け付けない)。")
+        Note("承認をゆるめる (どちらかをオフにする) ときは、指紋・顔・PIN でご本人か確かめてから変えます。オンにするのは、すぐに変わります。")
     }
 }
 

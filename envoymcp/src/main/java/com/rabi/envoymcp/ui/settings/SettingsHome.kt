@@ -131,7 +131,7 @@ internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (
             if (armOn && armMissing.isNotEmpty()) "許可する" else null) { a.requestArmPerms() },
         // 開発モードは、オンの間だけ見てほしいものとして出す
         if (dev) Check(Icons.Rounded.AdminPanelSettings, "開発モード", "オン: エージェントの権限の制限なし", false,
-            { open(Section.DEV, CardTitle.DEV_MODE) }, "オフにする") { a.setDevNoAgentLimits(false) } else null,
+            { open(Section.DEV, CardTitle.DEV_MODE) }, "オフにする") { a.setDevNoAgentLimits(false, say = {}) } else null,
     )
     val ready = checks.count { it.ok == true }
     val needs = checks.count { it.ok == false }

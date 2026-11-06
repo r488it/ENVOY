@@ -31,6 +31,7 @@ import com.rabi.envoymcp.auth.ClaudeClient
 import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.mcp.ActivityLog
+import com.rabi.envoymcp.mcp.Agent
 import com.rabi.envoymcp.voice.VoicePrimer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -38,6 +39,7 @@ import kotlinx.coroutines.launch
 /**
  * ENVOY MCP の設定。MCP サーバーのオン・オフ (初期値はオフ)、tunnel-client に渡す接続の情報、
  * 前面のアプリを読むための端末の操作の接続 (ワイヤレスデバッグ)、ChatGPT から呼ばれた道具の記録。
+ * 安全の設定をゆるめる変更 (承認をオフ・開発モードをオン・エージェントを足す・権限を広げる) は、ご本人か確かめてから行う (OwnerCheck)。
  */
 class SettingsActivity : ComponentActivity() {
     private val g by lazy { (application as McpApp).graph }
@@ -51,6 +53,8 @@ class SettingsActivity : ComponentActivity() {
     fun requestPhotos() = photoPerm.launch(Manifest.permission.READ_MEDIA_IMAGES)
     /** AgentARM の許可 (Bluetooth・カメラ)。答えが出たら、サービスに入れ直させる (カメラの種類を付け、腕とつなぎ始める) */
     private val armPerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { reapply() }
+    /** 安全の設定をゆるめる前に、ご本人か確かめる */
+    private val owner = OwnerCheck(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +67,11 @@ class SettingsActivity : ComponentActivity() {
 
     // ChatGPT でサインインの戻りを受け取るのは、この画面を開いている間だけ
     override fun onPause() { g.auth.setForeground(false); super.onPause() }
+
+    // 画面から離れたら、次にゆるめるときは確かめ直す
+    override fun onStop() { owner.forget(); super.onStop() }
+
+    override fun onDestroy() { owner.cancel(); super.onDestroy() }
 
     override fun onResume() {
         super.onResume()
@@ -100,13 +109,38 @@ class SettingsActivity : ComponentActivity() {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
     }
 
-    /** 開発モード (エージェントの権限の制限をかけない) を切り替え、したことに残す。確定の前の承認は変えない */
-    fun setDevNoAgentLimits(on: Boolean) {
+    /**
+     * 開発モード (エージェントの権限の制限をかけない) を切り替え、したことに残す。確定の前の承認は変えない。
+     * オンにするときは、先にご本人か確かめる (オフはすぐ)
+     */
+    fun setDevNoAgentLimits(on: Boolean, say: (String) -> Unit) {
         if (g.settings.devNoAgentLimits == on) return
-        g.settings.devNoAgentLimits = on
-        g.activity.add(ActivityLog.USER, "dev_mode", if (on) "開発モードをオンにした（エージェントの権限の制限をかけない）" else "開発モードをオフにした",
-            ActivityLog.KIND_ACT, ActivityLog.OK)
-        refresh.intValue++
+        val change: () -> Unit = {
+            g.settings.devNoAgentLimits = on
+            g.activity.add(ActivityLog.USER, "dev_mode", if (on) "開発モードをオンにした（エージェントの権限の制限をかけない）" else "開発モードをオフにした",
+                ActivityLog.KIND_ACT, ActivityLog.OK)
+            refresh.intValue++
+        }
+        if (!SafetyChange.loosensDevMode(g.settings.devNoAgentLimits, on)) { change(); return }
+        owner.ask("開発モードをオンにします", "止めていないエージェントが、権限の制限なしで、すべての道具を使えるようになります", say, change)
+    }
+
+    // ---------------------------------------------------------------- エージェント
+
+    /** エージェントを足す。先にご本人か確かめ、足したら added に渡す */
+    fun addAgent(say: (String) -> Unit, added: (Agent) -> Unit) =
+        owner.ask("AI エージェントを足します", "足したエージェントは、合言葉の URL から、このスマホの道具を使えるようになります", say) { added(g.agents.add()) }
+
+    /**
+     * エージェントの名前・権限・期限を変える。権限を広げるときは、先にご本人か確かめる (狭める・止めるはすぐ)。
+     * 変えたら done (あれば) を知らせる
+     */
+    fun updateAgent(next: Agent, say: (String) -> Unit, done: String? = null) {
+        val cur = g.agents.get(next.id) ?: return
+        val change: () -> Unit = { g.agents.update(next); done?.let(say) }
+        if (!SafetyChange.widensAgent(cur, next)) { change(); return }
+        val what = if (!cur.enabled && next.enabled) "「${cur.name}」を使えるようにします" else "「${cur.name}」の権限を広げます"
+        owner.ask(what, "変えたあと: ${permissionLine(next, withNoExpiry = true)}", say, change)
     }
 
     // ---------------------------------------------------------------- スマホの中の tunnel-client
@@ -208,8 +242,29 @@ class SettingsActivity : ComponentActivity() {
     }
     fun setMusicLyrics(on: Boolean) { g.settings.musicLyrics = on; refresh.intValue++ }
     fun setMusicFlash(on: Boolean) { g.settings.musicFlash = on; refresh.intValue++ }
-    fun setApprovalBiometric(on: Boolean) { g.settings.approvalBiometric = on; refresh.intValue++ }
-    fun setApprovalScreen(on: Boolean) { g.settings.approvalScreen = on; refresh.intValue++ }
+
+    /** 確定の前に承認画面を出すか。オフにする (承認をゆるめる) ときは、先にご本人か確かめる */
+    fun setApprovalScreen(on: Boolean, say: (String) -> Unit) {
+        val s = g.settings
+        val change: () -> Unit = { s.approvalScreen = on; refresh.intValue++ }
+        if (!SafetyChange.loosensApproval(s.approvalScreen, s.approvalBiometric, on, s.approvalBiometric)) { change(); return }
+        owner.ask("確定の前の承認画面を出さないようにします", approvalAfter(on, s.approvalBiometric), say, change)
+    }
+
+    /** 承認のときに指紋などの本人確認をするか。オフにする (承認をゆるめる) ときは、先にご本人か確かめる */
+    fun setApprovalBiometric(on: Boolean, say: (String) -> Unit) {
+        val s = g.settings
+        val change: () -> Unit = { s.approvalBiometric = on; refresh.intValue++ }
+        if (!SafetyChange.loosensApproval(s.approvalScreen, s.approvalBiometric, s.approvalScreen, on)) { change(); return }
+        owner.ask("承認のときの指紋などの本人確認をやめます", approvalAfter(s.approvalScreen, on), say, change)
+    }
+
+    /** ゆるめたあとの承認のしかた (本人確認の画面に出す) */
+    private fun approvalAfter(screen: Boolean, biometric: Boolean) = when {
+        screen -> "承認画面で「確認して実行」を押すだけで確定します"
+        biometric -> "確定しようとしている画面のまま、指紋などで承認します"
+        else -> "承認なしで、ChatGPT がそのまま確定するようになります"
+    }
 
     // ---------------------------------------------------------------- AgentARM
 
