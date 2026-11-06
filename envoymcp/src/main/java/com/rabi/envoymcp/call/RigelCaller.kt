@@ -254,7 +254,8 @@ class RigelCaller(private val g: McpGraph) {
             // 出られなかった: 本人が出られるよう、何もしない (だれも出なければ、IncomingCall がお知らせに残す)
             if (ev?.optString("outcome") == "failed") { g.voiceStage.afterRigelCall(); return }
             val keep = keeper(c) { noteIncoming(ev, it) }
-            if (!g.settings.rigelIncomingReport) { g.voiceStage.afterRigelCall(); keep(); return }          // ChatGPT は開かない (通話の記録とお知らせに残す)
+            // ChatGPT は開かない (通話の記録とお知らせに残す)。子どもモードの間も開かない (おとなの人に、子どもモードを切ってから伝える)
+            if (!g.settings.rigelIncomingReport || g.settings.kidsMode) { g.voiceStage.afterRigelCall(); keep(); return }
             g.voiceStage.releaseHold()
             g.reopenVoiceAfterCall(reportIncoming(ev, c), onSkip = keep)
             return

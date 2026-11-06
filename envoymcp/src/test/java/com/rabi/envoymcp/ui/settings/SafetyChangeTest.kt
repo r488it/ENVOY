@@ -1,5 +1,7 @@
 package com.rabi.envoymcp.ui.settings
 
+import com.rabi.envoymcp.kids.KidsRules
+import com.rabi.envoymcp.kids.Topic
 import com.rabi.envoymcp.mcp.Agent
 import com.rabi.envoymcp.mcp.AgentPolicy
 import com.rabi.envoymcp.mcp.ToolGroups
@@ -41,6 +43,26 @@ class SafetyChangeTest {
         assertTrue(SafetyChange.opensEntrance(on = false, nextOn = true))
         assertFalse(SafetyChange.opensEntrance(on = true, nextOn = false))
         assertFalse(SafetyChange.opensEntrance(on = true, nextOn = true))
+    }
+
+    /** 子どもモードは、切るときだけ確かめる (子どもが自分で切れないように)。入れるのはすぐ */
+    @Test fun onlyLeavingKidModeNeedsTheOwner() {
+        assertTrue(SafetyChange.leavesKidMode(on = true, nextOn = false))
+        assertFalse(SafetyChange.leavesKidMode(on = false, nextOn = true))
+        assertFalse(SafetyChange.leavesKidMode(on = true, nextOn = true))
+        assertFalse(SafetyChange.leavesKidMode(on = false, nextOn = false))
+    }
+
+    /** 子どもモードの間に、時間をのばす・AI の先生を入れる・固定を切るときは確かめる。短くする・題を変える・子どもモードがオフのときはすぐ */
+    @Test fun looseningKidRulesNeedsTheOwnerOnlyInKidMode() {
+        val cur = KidsRules(15, Topic.entries.toSet(), aiTeacher = false, pin = true)
+        assertTrue(SafetyChange.loosensKids(kidMode = true, cur = cur, next = cur.copy(limitMin = 30)))
+        assertTrue(SafetyChange.loosensKids(kidMode = true, cur = cur, next = cur.copy(aiTeacher = true)))
+        assertTrue(SafetyChange.loosensKids(kidMode = true, cur = cur, next = cur.copy(pin = false)))
+        assertFalse(SafetyChange.loosensKids(kidMode = true, cur = cur, next = cur.copy(limitMin = 5)))
+        assertFalse(SafetyChange.loosensKids(kidMode = true, cur = cur, next = cur.copy(topics = setOf(Topic.KAZU))))
+        assertFalse(SafetyChange.loosensKids(kidMode = true, cur = cur.copy(aiTeacher = true, pin = false), next = cur))
+        assertFalse(SafetyChange.loosensKids(kidMode = false, cur = cur, next = cur.copy(limitMin = 30, aiTeacher = true, pin = false)))
     }
 
     @Test fun resumingAndLeavingReadOnlyWiden() {

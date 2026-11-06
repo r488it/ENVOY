@@ -33,6 +33,7 @@ import com.rabi.envoymcp.VoiceAgent
 import com.rabi.envoymcp.auth.ClaudeClient
 import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.kids.KidsRules
 import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.mcp.Agent
 import com.rabi.envoymcp.mcp.NgrokSetup
@@ -128,6 +129,38 @@ class SettingsActivity : ComponentActivity() {
         }
         if (!SafetyChange.loosensDevMode(g.settings.devNoAgentLimits, on)) { change(); return }
         owner.ask("開発モードをオンにします", "止めていないエージェントが、権限の制限なしで、すべての道具を使えるようになります", say, change)
+    }
+
+    // ---------------------------------------------------------------- まなび (子どもモード)
+
+    /** 子どもモードを入れる・切る (したことに残す)。入れるのはすぐ。切るときは、先にご本人か確かめる (子どもが自分で切れないように) */
+    fun setKidsMode(on: Boolean, say: (String) -> Unit) {
+        if (g.settings.kidsMode == on) return
+        val change: () -> Unit = { g.kids.setKidMode(on, ActivityLog.USER); refresh.intValue++ }
+        if (!SafetyChange.leavesKidMode(g.settings.kidsMode, on)) { change(); return }
+        owner.ask("子どもモードを切ります", "AI エージェントが、まなびのほかの道具も使えるようになり、リゲルのタップで、ふだんの音声の会話が開きます", say, change)
+    }
+
+    /** お勉強をはじめる: 子どもモードを入れて (すぐ)、リゲルのタップと同じく、お勉強を開く (AI の先生を選んでいれば、その AI の音声モード) */
+    fun startKids() {
+        g.kids.setKidMode(true, ActivityLog.USER)
+        refresh.intValue++
+        g.openKids("settings")
+    }
+
+    /** まなびの決まりを変える。子どもモードの間にゆるめる (時間をのばす・AI の先生を入れる・画面の固定を切る) ときは、先にご本人か確かめる */
+    fun setKidsRules(next: KidsRules, say: (String) -> Unit) {
+        val s = g.settings
+        val cur = s.kidsRules
+        if (cur == next) return
+        val change: () -> Unit = { s.kidsRules = next; refresh.intValue++ }
+        if (!SafetyChange.loosensKids(s.kidsMode, cur, next)) { change(); return }
+        val what = listOfNotNull(
+            if (next.limitMin > cur.limitMin) "1 日の時間を ${next.limitMin} 分にのばします" else null,
+            if (!cur.aiTeacher && next.aiTeacher) "AI の先生を使います (子どもの声が AI に届きます)" else null,
+            if (cur.pin && !next.pin) "お勉強の画面を固定しません" else null,
+        ).joinToString("。")
+        owner.ask("子どもモードの決まりをゆるめます", what, say, change)
     }
 
     // ---------------------------------------------------------------- エージェント

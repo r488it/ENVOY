@@ -31,7 +31,7 @@ import org.json.JSONObject
  * - 代わりに出るかの選ばせ方は設定で切り替える (McpSettings.rigelIncoming):
  *   off しない / buttons 着信の画面に「リゲルが代わりに出る」「自分で出る」を重ねる /
  *   voice ChatGPT の音声モードを開き、本人に尋ねさせる (答えは道具 rigel_incoming で受ける)。
- *   画面がロック中・ChatGPT ともう話している (最初の一言を入れられない) ときは、voice でもボタンにする
+ *   画面がロック中・ChatGPT ともう話している (最初の一言を入れられない)・子どもモード (rigel_incoming を使えない) のときは、voice でもボタンにする
  * - 本人が出ず選びもしないまま、設定の秒数 (rigelAutoAnswerSec) がたったら、設定でオンなら (rigelAutoAnswer) リゲルが代わりに出る
  *   (秒数は鳴り始めから数える)。オフなら、ASK_TIMEOUT_MS で選ばせるのをやめる (電話はそのまま鳴る)
  * - 代わりに出るなら、ChatGPT の音声モードを終えてから (声が通話に入らないように)、ボードに出てもらう (RigelCaller.answer)。
@@ -114,7 +114,7 @@ class IncomingCall(private val g: McpGraph) {
             asking = true
             val locked = g.context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
             val voiceOn = am.mode == AudioManager.MODE_IN_COMMUNICATION
-            if (how == "voice" && !locked && !voiceOn && askByVoice()) askedByVoice = true
+            if (how == "voice" && !locked && !voiceOn && !g.settings.kidsMode && askByVoice()) askedByVoice = true
             else withContext(Dispatchers.Main) { showButtons() }
             delay((wait - (System.currentTimeMillis() - at)).coerceAtLeast(0))
             if (asking) {

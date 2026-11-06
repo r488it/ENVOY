@@ -146,6 +146,17 @@
             android:taskAffinity="com.rabi.envoymcp.record"
             android:theme="@style/Theme.Rabi" />
 
+        <!-- お勉強の画面 (子どもモードのまなび。画面いっぱい。ひとりでお勉強するときは、アプリの固定でこの画面を固定する) -->
+        <activity
+            android:name="com.rabi.envoymcp.kids.KidsActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="おべんきょう"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:taskAffinity="com.rabi.envoymcp.kids"
+            android:theme="@style/Theme.Rabi" />
+
         <activity
             android:name="com.rabi.envoymcp.ui.approval.ApprovalActivity"
             android:excludeFromRecents="true"

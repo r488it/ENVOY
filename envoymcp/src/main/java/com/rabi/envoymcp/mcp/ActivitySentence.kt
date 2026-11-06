@@ -1,6 +1,7 @@
 package com.rabi.envoymcp.mcp
 
 import com.rabi.envoymcp.call.NumberMask
+import com.rabi.envoymcp.kids.Topic
 import org.json.JSONObject
 
 /**
@@ -107,6 +108,11 @@ internal object ActivitySentence {
             "run_part" -> s((quoted(first) ?: clean(args.optString("part_id")))?.let { "部品「$it」を" } ?: "部品を", V("動かした", "動かそうとした"))
             "save_part" -> s(clean(args.optString("name"))?.let { "部品「$it」を" } ?: "部品を", V("登録した", "登録しようとした"))
             "delete_part" -> s((if (done) quoted(first) else null)?.let { "部品「$it」を" } ?: "部品を", V("消した", "消そうとした"))
+            // お勉強: 題だけ (子どもが選んだもの・声は残さない。まとめは KidsLesson が 1 行で残す)
+            "kids_start" -> s(Topic.byId(args.optString("topic"))?.let { "お勉強（${it.label}）を" } ?: "お勉強を", START)
+            "kids_question" -> s("お勉強の問題を", V("出した", "出そうとした"))
+            "kids_cheer" -> s("子どもを", V("ほめた", "ほめようとした"))
+            "kids_end" -> s("お勉強を", V("おしまいにした", "おしまいにしようとした"))
             else -> title.ifBlank { tool }
         }
     }

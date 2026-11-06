@@ -43,14 +43,14 @@ class VoicePrimer(private val g: McpGraph) {
     }
 
     /**
-     * 開いた音声モードに、決まった頼みの文 (report。お知らせの引き継ぎ・電話のあとの報告・着信の質問) を最初の一言として送る。
+     * 開いた音声モードに、決まった頼みの文 (report。お知らせの引き継ぎ・電話のあとの報告・着信の質問・子どもの先生の役) を最初の一言として送る。
      * report は ENVOY MCP が書いた文だけ (外から届いた文は入れない)。
-     * いつもの最初の一言 (設定) があれば、その後ろに続ける。送れたら onSent を呼ぶ
+     * withBase なら、いつもの最初の一言 (設定) があれば、その後ろに続ける (子どもの先生の役の文は、それだけを送る)。送れたら onSent を呼ぶ
      */
-    fun expectReport(report: String, onSent: () -> Unit = {}) {
+    fun expectReport(report: String, withBase: Boolean = true, onSent: () -> Unit = {}) {
         job?.cancel()
         if (am.mode == AudioManager.MODE_IN_COMMUNICATION) { RabiLog.i("primer", "skip report (voice already on)"); return }
-        val base = if (g.settings.voicePrimer) g.settings.voicePrimerText.trim() else ""
+        val base = if (withBase && g.settings.voicePrimer) g.settings.voicePrimerText.trim() else ""
         val text = listOf(base, report).filter { it.isNotEmpty() }.joinToString(" ").replace('\n', ' ')
         job = g.scope.launch(Dispatchers.IO) { if (send(text, waitVoice = true)) onSent() }
     }

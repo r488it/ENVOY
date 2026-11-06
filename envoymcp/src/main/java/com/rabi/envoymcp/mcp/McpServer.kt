@@ -2,6 +2,8 @@ package com.rabi.envoymcp.mcp
 
 import com.rabi.envoymcp.BuildConfig
 import com.rabi.envoymcp.core.RabiLog
+import com.rabi.envoymcp.kids.KidsTeacher
+import com.rabi.envoymcp.voice.ClaudeVoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +51,8 @@ class McpServer(
     private val oauth: OAuthServer? = null,
     /** 最初の案内 (INSTRUCTIONS) に足す説明 (設定で変わるもの。空なら足さない) */
     extraInstructions: () -> String = { "" },
+    /** 子どもモード: どのエージェントにも、子どもモードで使える道具だけを出す (McpProtocol) */
+    kidMode: () -> Boolean = { false },
 ) {
     sealed class State(val label: String) {
         data object Stopped : State("止まっています")
@@ -60,7 +64,7 @@ class McpServer(
     val state: StateFlow<State> = _state
     val running get() = _state.value is State.Running
 
-    private val protocol = McpProtocol(tools, BuildConfig.VERSION_NAME, INSTRUCTIONS, unlimited, now, extraInstructions)
+    private val protocol = McpProtocol(tools, BuildConfig.VERSION_NAME, INSTRUCTIONS, unlimited, now, extraInstructions, kidMode)
     private var socket: ServerSocket? = null
     private var scope: CoroutineScope? = null
 
@@ -190,6 +194,15 @@ class McpServer(
         private const val MAX_CONNECTIONS = 8
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_BODY = 1 shl 20
+
+        /**
+         * 最初の案内に足す説明 (設定で変わるもの): 話し相手が Claude なら、音声で道具を使う間は黙る頼み。
+         * 子どもモードの間だけ、3 さいの子どもと話す決まり (KidsTeacher.INSTRUCTIONS)
+         */
+        fun extraInstructions(claudeVoice: Boolean, kidMode: Boolean): String = listOfNotNull(
+            if (claudeVoice) "音声で話しているときは、" + ClaudeVoice.QUIET_TOOLS else null,
+            if (kidMode) KidsTeacher.INSTRUCTIONS else null,
+        ).joinToString(" ")
 
         /** ChatGPT に渡す説明 (initialize の instructions) */
         const val INSTRUCTIONS =

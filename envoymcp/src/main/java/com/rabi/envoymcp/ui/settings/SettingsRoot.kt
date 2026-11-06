@@ -148,6 +148,7 @@ private fun SectionCards(s: Section, g: McpGraph, a: SettingsActivity, tick: Int
         Section.ARM -> ArmCards(g, a, tick, say)
         Section.PHOTO -> PhotoCard(g, a, tick)
         Section.MONITOR -> MonitorCard(g)
+        Section.KIDS -> KidsCard(g, a, tick, say)
         Section.DEV -> { DevCard(g, a, say); DevModeCard(g, a, tick, say); ToolLogCard(g) }
         Section.ABOUT -> LicenseCard()
     }

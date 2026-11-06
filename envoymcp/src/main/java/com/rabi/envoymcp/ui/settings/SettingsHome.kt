@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Accessibility
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.ChildCare
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DesktopWindows
@@ -68,6 +69,7 @@ internal enum class Section(val title: String, val icon: ImageVector) {
     ARM("AgentARM", Icons.Rounded.PrecisionManufacturing),
     PHOTO("写真", Icons.Rounded.PhotoLibrary),
     MONITOR("モニター", Icons.Rounded.DesktopWindows),
+    KIDS("まなび", Icons.Rounded.ChildCare),
     DEV("開発・試験", Icons.Rounded.Code),
     ABOUT("このアプリについて", Icons.Rounded.Info),
 }
@@ -85,6 +87,7 @@ internal object CardTitle {
     const val ARM = "AgentARM (スマホを載せる腕)"
     const val AGENTS = "エージェントの権限"
     const val DEV_MODE = "開発モード"
+    const val KIDS = "まなび（子どもモード）"
 }
 
 /** 準備の状態の 1 行: アイコン・名前・今の様子・色 (stateColor)・押したときの行き先・直す所を開くボタン (無いこともある) */
@@ -274,6 +277,8 @@ private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<S
     val canOverlay = remember(tick) { g.overlay.canShow() }
     val phoneOk = remember(tick) { a.hasPhonePerms() }
     val armMissing = remember(tick) { a.armMissingPerms() }
+    val kidMode = remember(tick) { s.kidsMode }
+    val kidsLeft = remember(tick) { g.kids.minutesLeft() }
     val photoPerm = remember(tick) { g.photos.hasPermission() }
     val mic = remember(tick) { a.hasMic() }
     fun onOff(on: Boolean) = if (on) "オン" else "オフ"
@@ -325,6 +330,7 @@ private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<S
             !s.monitorStage -> "オフ" to null
             else -> ("オン・操作先は " + if (g.monitorStage.target != android.view.Display.DEFAULT_DISPLAY) "モニター" else "スマホ") to true
         },
+        Section.KIDS to (if (kidMode) "子どもモード オン・のこり $kidsLeft 分" to true else "子どもモード オフ" to null),
         Section.DEV to (if (s.devNoAgentLimits) "開発モード オン・道具の記録 ${entries.size} 件" to false
             else "接続の情報・道具の記録 ${entries.size} 件" to null),
     )

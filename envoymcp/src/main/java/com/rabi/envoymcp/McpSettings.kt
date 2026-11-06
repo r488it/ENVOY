@@ -2,6 +2,8 @@ package com.rabi.envoymcp
 
 import android.content.Context
 import androidx.core.content.edit
+import com.rabi.envoymcp.kids.KidsRules
+import com.rabi.envoymcp.kids.Topic
 import com.rabi.envoymcp.voice.VoicePrimer
 import java.security.SecureRandom
 
@@ -261,6 +263,56 @@ class McpSettings(context: Context) {
 
     /** アバターの見た目 */
     val avatar: String get() = "orb"
+
+    // ---------------------------------------------------------------- まなび (子どもモード)
+
+    /**
+     * 子どもモード (最初はオフ)。オンの間は、AI エージェントはまなびの道具 (と表情・腕の動き・会話を終える道具) だけ使え、
+     * リゲルのタップでお勉強の画面を開く。入れるのはすぐ。切るときは、ご本人か確かめる (SafetyChange.leavesKidMode)
+     */
+    var kidsMode: Boolean
+        get() = p.getBoolean("kids_mode", false)
+        set(v) = p.edit { putBoolean("kids_mode", v) }
+
+    /** 1 日にお勉強できる時間 (分。最初は 15) */
+    var kidsLimitMin: Int
+        get() = p.getInt("kids_limit_min", KidsRules.DEFAULT_LIMIT_MIN)
+        set(v) = p.edit { putInt("kids_limit_min", v) }
+
+    /** おうちの人が選んだ、まなぶ題 (最初は全部。全部外したときも全部) */
+    var kidsTopics: Set<Topic>
+        get() = p.getStringSet("kids_topics", null)?.mapNotNull { Topic.byId(it) }?.toSet()?.ifEmpty { null } ?: Topic.entries.toSet()
+        set(v) = p.edit { putStringSet("kids_topics", v.map { it.id }.toSet()) }
+
+    /**
+     * AI の先生 (最初はオフ)。オンなら、子どもモードのリゲルのタップで、話し相手の AI の音声モードを、子どもの先生として開く
+     * (子どもの声は、その AI に届く)。オフなら、お勉強はスマホの中だけで動き、外には何も送らない
+     */
+    var kidsAiTeacher: Boolean
+        get() = p.getBoolean("kids_ai_teacher", false)
+        set(v) = p.edit { putBoolean("kids_ai_teacher", v) }
+
+    /** ひとりでお勉強する画面を、Android のアプリの固定で固定する (最初はオン) */
+    var kidsPin: Boolean
+        get() = p.getBoolean("kids_pin", true)
+        set(v) = p.edit { putBoolean("kids_pin", v) }
+
+    /** まなびの決まり (まとめて読む・変える) */
+    var kidsRules: KidsRules
+        get() = KidsRules(kidsLimitMin, kidsTopics, kidsAiTeacher, kidsPin)
+        set(v) { kidsLimitMin = v.limitMin; kidsTopics = v.topics; kidsAiTeacher = v.aiTeacher; kidsPin = v.pin }
+
+    /** きょう、お勉強の画面を見ていた長さ (ミリ秒) と、その日 */
+    var kidsUsedMs: Long
+        get() = p.getLong("kids_used_ms", 0L)
+        set(v) = p.edit { putLong("kids_used_ms", v) }
+    var kidsUsedDay: String
+        get() = p.getString("kids_used_day", "") ?: ""
+        set(v) = p.edit { putString("kids_used_day", v) }
+
+    /** 題ごとの難しさ (次の回も同じ難しさから始める) */
+    fun kidsLevel(t: Topic): Int = p.getInt("kids_level_${t.id}", 1).coerceIn(1, t.maxLevel)
+    fun setKidsLevel(t: Topic, level: Int) = p.edit { putInt("kids_level_${t.id}", level.coerceIn(1, t.maxLevel)) }
 
     companion object {
         const val DEFAULT_PORT = 8765

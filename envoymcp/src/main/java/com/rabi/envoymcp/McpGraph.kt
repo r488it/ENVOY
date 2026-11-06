@@ -31,6 +31,8 @@ import com.rabi.envoymcp.device.AdbDeviceController
 import com.rabi.envoymcp.device.AppShortcuts
 import com.rabi.envoymcp.device.SwitchingDeviceController
 import com.rabi.envoymcp.device.adb.AdbConnector
+import com.rabi.envoymcp.kids.KidsLesson
+import com.rabi.envoymcp.kids.KidsTeacher
 import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.mcp.Agents
 import com.rabi.envoymcp.mcp.McpServer
@@ -161,8 +163,12 @@ class McpGraph(val context: Context) {
         store = OAuthServer.Prefs(context), approve = { connectApproval.ask() }, activity = activity)
     val server = McpServer(tools, port = { settings.port }, token = { settings.token }, log = log, agents = agents,
         unlimited = { settings.devNoAgentLimits }, oauth = oauth,
-        // 話し相手が Claude のときは、音声で道具を使う間は黙るよう、最初の案内にも書く
-        extraInstructions = { if (settings.voiceAgent == VoiceAgent.CLAUDE) "音声で話しているときは、" + ClaudeVoice.QUIET_TOOLS else "" })
+        // 話し相手が Claude のときは、音声で道具を使う間は黙るよう、最初の案内にも書く。子どもモードの間は、子どもと話す決まりも書く
+        extraInstructions = { McpServer.extraInstructions(settings.voiceAgent == VoiceAgent.CLAUDE, settings.kidsMode) },
+        // 子どもモードの間は、どのエージェントにも、子どもモードで使える道具だけを出す
+        kidMode = { settings.kidsMode })
+    /** まなび (子どもモードのお勉強): お勉強の画面とまなびの道具が分け合う進み方・時間 */
+    val kids by lazy { KidsLesson(this) }
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
     /** 画面の理解で Claude を使うときの、本人の Anthropic の API キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
@@ -504,11 +510,13 @@ class McpGraph(val context: Context) {
      * 本人にまだ伝えていないお知らせ (notices。電話のあとのこと・定期の依頼の結果) があれば、最初の一言で「N 件ある。get_notices で読んで」と頼む
      * (最初の一言は決まった文と種類・時刻だけ。中身は get_notices で外から届いた文として渡す)。
      * 送れたものに印を付け、get_notices で読まれたら消す。
-     * 話し相手の AI が Claude なら、ChatGPT ではなく Claude の音声モードを開く (openClaude)
+     * 話し相手の AI が Claude なら、ChatGPT ではなく Claude の音声モードを開く (openClaude)。
+     * 子どもモードの間は、お勉強を開く (openKids。お知らせは渡さない)
      */
     fun tapRigel(from: String) {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser(from); return }
         clearStop()
+        if (settings.kidsMode) { openKids(from); return }
         if (useClaude()) { openClaude(withNotices = true); return }
         // 音声モードの真ん中のリゲルを、ChatGPT が開くのを待たずに出す (開けなければ消す)
         voiceStage.expectVoice()
@@ -524,14 +532,40 @@ class McpGraph(val context: Context) {
     /**
      * デジタル アシスタントの受け口 (AssistActivity。電源ボタンの長押しなど) から開いた: 道具が動いている間は止める。
      * 何もしていなければ ChatGPT の音声モードを開く (いつもの最初の一言だけ送る)。話し相手の AI が Claude なら Claude の音声モードを開く。
-     * 受け口はほかのアプリからも開けるので、リゲルのタップと違い、お知らせの引き継ぎと、止めた状態を解くこと (clearStop) はしない
+     * 受け口はほかのアプリからも開けるので、リゲルのタップと違い、お知らせの引き継ぎと、止めた状態を解くこと (clearStop) はしない。
+     * 子どもモードの間は、お勉強を開く (openKids)
      */
     fun openVoiceFromAssist() {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser("assist"); return }
+        if (settings.kidsMode) { openKids("assist"); return }
         if (useClaude()) { openClaude(withNotices = false); return }
         voiceStage.expectVoice()
         voicePrimer.expect()
         if (!openChatGptVoice()) { RabiLog.w("graph", "cannot open ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
+    }
+
+    /**
+     * お勉強を開く (子どもモードのリゲルのタップ・腕の呼び名・設定の「お勉強をはじめる」)。
+     * - ひとりで (いつも): お勉強の画面を開く。スマホの中だけで動き、外には何も送らない
+     * - おうちの人が「AI の先生」を選んでいれば: 話し相手の AI の音声モードを、子どもの先生として開く
+     *   (Claude は先生の役の文を文字で送ってから音声モード。ChatGPT は最初の一言に先生の役の文を送る。いつもの最初の一言とお知らせは送らない)。
+     *   AI のアプリを開けないとき・きょうの時間を使い切ったときは、お勉強の画面を開く
+     */
+    fun openKids(from: String) {
+        RabiLog.i("graph", "kids ($from)")
+        if (!settings.kidsAiTeacher || kids.over()) { kids.openAlone(); return }
+        val topics = settings.kidsTopics
+        if (useClaude()) {
+            if (!claudeVoice.open(KidsTeacher.claudePrompt(topics), KidsTeacher.CLAUDE_HINT)) { RabiLog.w("graph", "cannot open Claude"); kids.openAlone() }
+            return
+        }
+        voiceStage.expectVoice()
+        voicePrimer.expectReport(KidsTeacher.chatGptReport(topics), withBase = false)
+        if (!openChatGptVoice()) {
+            RabiLog.w("graph", "cannot open ChatGPT")
+            voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() }
+            kids.openAlone()
+        }
     }
 
     /** リゲルのタップで Claude を開くか: 話し相手の AI が Claude で、Claude のアプリが入っているとき (入っていなければ ChatGPT を開く) */

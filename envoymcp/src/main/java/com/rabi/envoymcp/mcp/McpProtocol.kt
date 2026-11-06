@@ -14,6 +14,8 @@ interface ToolHost {
     suspend fun call(name: String, args: JSONObject, agent: Agent? = null): ToolResult?
     /** このエージェントに許されていない道具を頼まれた: 動かさずに断る (本物は記録にも残す) */
     fun refuse(name: String, args: JSONObject, agent: Agent): ToolResult = AgentPolicy.refusal(agent)
+    /** 子どもモードの間に、子どもモードで使えない道具を頼まれた: 動かさずに断る (本物は記録にも残す。agent が null なら本体の ChatGPT) */
+    fun refuseInKidMode(name: String, args: JSONObject, agent: Agent?): ToolResult = AgentPolicy.kidRefusal()
 }
 
 /**
@@ -41,7 +43,9 @@ data class ToolResult(
  * MCP (JSON-RPC 2.0) の受け答え。HTTP とは切り離してある (HTTP は McpServer が受け持つ)。
  * 対応するのは initialize / ping / tools/list / tools/call と通知 (返事なし)。それ以外は「対応していない」と返す。
  * エージェントの権限 (AgentPolicy): tools/list はそのエージェントが使える道具だけを出し、許されていない道具の tools/call は動かさずに断る。
- * unlimited (開発モード) のときは、まとまり・読むだけ・期限の制限をかけない (確定の前の承認は道具の中なので、そのまま)
+ * unlimited (開発モード) のときは、まとまり・読むだけ・期限の制限をかけない (確定の前の承認は道具の中なので、そのまま)。
+ * 子どもモード (kidMode) の間は、どのエージェントにも (開発モードでも)、子どもモードで使える道具 (AgentPolicy.KIDS_TOOLS) だけを出し、
+ * ほかの道具の tools/call は動かさずに断る (エージェントの権限は、その上でかける)
  */
 class McpProtocol(
     private val tools: ToolHost,
@@ -51,9 +55,14 @@ class McpProtocol(
     private val now: () -> Long = System::currentTimeMillis,
     /** instructions に足す説明 (設定で変わるもの。空なら足さない) */
     private val extraInstructions: () -> String = { "" },
+    /** 子どもモードか (設定で変わる) */
+    private val kidMode: () -> Boolean = { false },
 ) {
 
-    /** 届いた本文 (JSON) を処理する。返事の要らないもの (通知・ChatGPT 側からの返事) は null。agent は呼んだエージェント (null なら絞らない) */
+    /**
+     * 届いた本文 (JSON) を処理する。返事の要らないもの (通知・ChatGPT 側からの返事) は null。
+     * agent は呼んだエージェント (null ならエージェントの権限では絞らない。子どもモードの絞り込みはかける)
+     */
     suspend fun handle(body: String, agent: Agent? = null): String? = when (val msg = runCatching { JSONTokener(body).nextValue() }.getOrNull()) {
         is JSONObject -> handleOne(msg, agent)?.toString()
         // JSON-RPC の一括 (配列。MCP の古い版にだけある)。来たら 1 件ずつ
@@ -85,7 +94,11 @@ class McpProtocol(
                 "tools/call" -> {
                     val name = params.optString("name")
                     val args = params.optJSONObject("arguments") ?: JSONObject()
-                    val r = if (agent != null && permitted(agent, name) == false) tools.refuse(name, args, agent) else tools.call(name, args, agent)
+                    val r = when {
+                        kidMode() && listed(name) && !AgentPolicy.kidAllows(name) -> tools.refuseInKidMode(name, args, agent)
+                        agent != null && permitted(agent, name) == false -> tools.refuse(name, args, agent)
+                        else -> tools.call(name, args, agent)
+                    }
                     if (r == null) error(id, INVALID_PARAMS, "道具がありません: $name") else result(id, r.toJson())
                 }
                 else -> error(id, METHOD_NOT_FOUND, "対応していません: $method")
@@ -97,17 +110,27 @@ class McpProtocol(
         }
     }
 
-    /** このエージェントに出す道具 (並びはそのまま。agent が無ければすべて) */
+    /** このエージェントに出す道具 (並びはそのまま。agent が無ければすべて。子どもモードの間は、子どもモードで使える道具だけ) */
     private fun listFor(agent: Agent?): JSONArray {
         val all = tools.list()
-        if (agent == null || unrestricted(agent)) return all
+        val kid = kidMode()
+        val open = agent == null || unrestricted(agent)
+        if (open && !kid) return all
         val t = now(); val u = unlimited()
         return JSONArray().apply {
             for (i in 0 until all.length()) {
                 val o = all.optJSONObject(i) ?: continue
-                if (AgentPolicy.allows(agent, o.optString("name"), readOnly(o), t, u)) put(o)
+                val name = o.optString("name")
+                val ok = if (open || agent == null) AgentPolicy.kidAllows(name) else AgentPolicy.allows(agent, name, readOnly(o), t, u, kid)
+                if (ok) put(o)
             }
         }
+    }
+
+    /** 一覧にある道具か (無い道具は、道具の出し手が「ありません」と返す) */
+    private fun listed(name: String): Boolean {
+        val all = tools.list()
+        return (0 until all.length()).any { all.optJSONObject(it)?.optString("name") == name }
     }
 
     /** この道具を使ってよいか (一覧に無い道具は null。道具の出し手が「ありません」と返す) */

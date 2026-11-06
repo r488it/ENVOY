@@ -79,11 +79,13 @@ object AgentPolicy {
 
     /**
      * この道具を使ってよいか (tool は道具の名前、readOnly はその道具が読むだけか)。
-     * 止めている・期限切れ → だめ。開発モードなら、それ以外は全部よい。読むだけのエージェントは読むだけの道具だけ。
+     * 止めている・期限切れ → だめ。子どもモード (kidMode) の間は、子どもモードで使える道具 (KIDS_TOOLS) だけ (開発モードでも)。
+     * 開発モードなら、それ以外は全部よい。読むだけのエージェントは読むだけの道具だけ。
      * まとまりを絞っていれば、そのまとまりの道具だけ (「その他」の道具は、すべてのまとまりを許したときだけ)。1 つずつ止めた道具はだめ
      */
-    fun allows(a: Agent, tool: String, readOnly: Boolean, now: Long, unlimited: Boolean = false): Boolean {
+    fun allows(a: Agent, tool: String, readOnly: Boolean, now: Long, unlimited: Boolean = false, kidMode: Boolean = false): Boolean {
         if (status(a, now, unlimited) != Status.OK) return false
+        if (kidMode && !kidAllows(tool)) return false
         if (unlimited) return true
         if (a.readOnly && !readOnly) return false
         if (tool in a.denied) return false
@@ -95,6 +97,23 @@ object AgentPolicy {
     /** 許されていない道具を頼まれたときの返事 (道具の失敗として返す。頼んだ AI が読んで、利用者に伝えられる) */
     fun refusal(a: Agent): ToolResult =
         failed("この道具は、スマホの ENVOY MCP の設定で、このエージェント (${a.name}) に許されていません。", JSONObject().put("permitted", false))
+
+    /**
+     * 子どもモードの間に使える道具: まなびのまとまりの道具と、表情・腕の動き・踊り・会話を終える道具。
+     * 買う・電話する・共有する・ほかのアプリを開く・ほかのアプリを押す道具は入れない
+     */
+    val KIDS_TOOLS: Set<String> by lazy {
+        (ToolGroups.groups.first { it.first == ToolGroups.KIDS }.second + listOf("rigel_expression", "arm_motion", "arm_dance", "end_voice_chat")).toSet()
+    }
+
+    /** 子どもモードの間に使える道具か */
+    fun kidAllows(tool: String): Boolean = tool in KIDS_TOOLS
+
+    /** 子どもモードの間に、ほかの道具を頼まれたときの返事 (道具の失敗として返す。AI が読んで、子どもとのお勉強を続けられる) */
+    fun kidRefusal(): ToolResult =
+        failed("今は子どもモードです。子どもモードの間は、まなびの道具 (kids_start・kids_question・kids_cheer・kids_end) と、" +
+            "rigel_expression・arm_motion・arm_dance・end_voice_chat だけ使えます。この道具は使えません。子どもとのお勉強を続けてください。",
+            JSONObject().put("permitted", false).put("kid_mode", true))
 
     /** 権限の一行のまとめ:「すべて」「読むだけ」「読むだけ・画面とアプリだけ」 */
     fun summary(a: Agent): String {

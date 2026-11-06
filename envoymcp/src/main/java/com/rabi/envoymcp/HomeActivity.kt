@@ -1,5 +1,16 @@
 package com.rabi.envoymcp
 
+import com.rabi.envoymcp.mcp.ActivityLog
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -50,8 +61,11 @@ import com.rabi.envoymcp.ui.settings.SettingsActivity
 /**
  * ENVOY MCP のホーム画面。リゲルと「設定」だけを出す (MCP サーバーの状態は設定の画面と通知で分かる)。
  * - 何もしていないときにリゲルをタップすると、話し相手の AI (ChatGPT か Claude) のアプリ (できれば音声モード) を開く
+ * - 子どもモードの間は、リゲルのタップでお勉強を開く (McpGraph.openKids)
  * - 道具が動いている間にタップすると、止める (ChatGPT を開くのとは分ける)
  * - 下の「設定」から、MCP サーバーのオン・オフと接続の情報。左下の「したこと」で、AI エージェントとリゲルがしたことを見る
+ * - 右上の子どもモードのボタン: オフのときは小さく「まなび」(押すと子どもモードに入り、お勉強を開く)。
+ *   オンのときは大きく「おべんきょう」(押すとお勉強を開く)。子どもモードを切るのは、お勉強の画面の「おとなの人」か設定から (ご本人か確かめる)
  */
 class HomeActivity : ComponentActivity() {
     private val g by lazy { (application as McpApp).graph }
@@ -70,7 +84,12 @@ class HomeActivity : ComponentActivity() {
         setContent {
             HomeStage(g, onTap = { g.tapRigel("home") }, onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
                 onCalls = { startActivity(Intent(this, CallLogActivity::class.java)) },
-                onActivity = { startActivity(Intent(this, ActivityActivity::class.java)) })
+                onActivity = { startActivity(Intent(this, ActivityActivity::class.java)) },
+                onKids = {
+                    // 子どもモードに入るのは安全を強める変更なので、確かめずにすぐ入る
+                    if (!g.settings.kidsMode) g.kids.setKidMode(true, ActivityLog.USER)
+                    g.openKids("home")
+                })
         }
     }
 
@@ -90,12 +109,14 @@ class HomeActivity : ComponentActivity() {
 
 @Composable
 internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, big: Boolean = false, onCalls: (() -> Unit)? = null,
-                       onActivity: (() -> Unit)? = null) {
+                       onActivity: (() -> Unit)? = null, onKids: (() -> Unit)? = null) {
     val st by g.state.collectAsState()
     val density = LocalDensity.current
     var resumed by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumed++ }
     val solid = remember(resumed) { g.settings.avatar3d }
+    // 子どもモードか (見えるたびに読み直す)
+    val kidMode = remember(resumed) { g.settings.kidsMode }
     // まだ見ていない通話の記録の数 (「通話の記録」の横に出す)
     val unseen by g.callRecords.unseen.collectAsState()
     val notes by g.notices.notes.collectAsState()
@@ -104,7 +125,10 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
         Avatar(
             st.mood, AvatarStyle.byId(g.settings.avatar), 0f,
             Modifier.fillMaxSize()
-                .semantics { contentDescription = "リゲル。タップすると音声の会話を始めます。操作中にタップすると止めます" }
+                .semantics {
+                    contentDescription = if (kidMode) "リゲル。タッチすると おべんきょうが はじまります"
+                    else "リゲル。タップすると音声の会話を始めます。操作中にタップすると止めます"
+                }
                 .pointerInput(Unit) {
                     // 球の上 (少し外側まで) を短くタップしたときだけ。指を動かした (球をつまんだ) ものはタップにしない
                     awaitEachGesture {
@@ -128,9 +152,14 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
                 expressionHoldMs = st.expressionHoldMs),
             fullScreen = true, allow3d = solid, big = big,
         )
+        // 右上: 子どもモードのボタン (オフのときは小さく、オンのときは子どもにも分かるよう大きく黄色に)
+        if (onKids != null) KidsButton(kidMode, onKids, Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 12.dp, end = 16.dp))
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 28.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             if (st.caption.isNotBlank()) Text(st.caption, color = Color(0xFFE8ECF2), fontSize = 22.sp, textAlign = TextAlign.Center, maxLines = 2)
+            // 子どもモード: リゲルのタップでお勉強が始まる (お知らせは、子どもモードを切ってから伝える)
+            else if (kidMode) Text("リゲルを タッチして おべんきょう しよう", color = Color(0xFFFFD86B),
+                fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.padding(bottom = 4.dp))
             // まだ伝えていないお知らせ (電話のあとのこと・定期の依頼の結果) がある (リゲルをタップすると、音声モードの最初に伝える)
             else if (notes.isNotEmpty()) Text("お知らせが ${notes.size} 件あります。リゲルをタップすると伝えます", color = Color(0xFF8FB4FF),
                 fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.padding(bottom = 4.dp))
@@ -147,5 +176,23 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
                 }
             }
         }
+    }
+}
+
+/** ホームの右上の子どもモードのボタン。kidMode なら「おべんきょう」(大きく黄色)、そうでなければ「まなび」(小さく控えめ) */
+@Composable
+private fun KidsButton(kidMode: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val ink = if (kidMode) Color(0xFF3A2A00) else Color(0xFF8A93A4)
+    Row(
+        modifier.clip(RoundedCornerShape(28.dp))
+            .background(if (kidMode) Color(0xFFFFD86B) else Color(0x1AFFFFFF))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = if (kidMode) "おべんきょうを はじめる" else "子どもモードに入って、お勉強をはじめる" }
+            .padding(horizontal = if (kidMode) 22.dp else 14.dp, vertical = if (kidMode) 12.dp else 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Star, contentDescription = null, tint = ink, modifier = Modifier.size(if (kidMode) 26.dp else 18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(if (kidMode) "おべんきょう" else "まなび", color = ink, fontSize = if (kidMode) 22.sp else 15.sp, fontWeight = FontWeight.Bold)
     }
 }

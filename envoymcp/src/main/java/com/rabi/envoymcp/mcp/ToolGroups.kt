@@ -2,6 +2,9 @@ package com.rabi.envoymcp.mcp
 
 /** 道具のまとまり (設定の画面の「MCP の道具」で、この順に並べる。どのまとまりにも入らない道具は「その他」) */
 object ToolGroups {
+    /** まなび (子どものお勉強) のまとまりの名前 */
+    const val KIDS = "まなび"
+
     val groups: List<Pair<String, List<String>>> = listOf(
         "様子・画面" to listOf("get_state", "read_screen", "get_screenshot", "look_at_screen", "share_screenshot"),
         "アプリ" to listOf("list_apps", "list_shortcuts", "open_app", "open_shortcut", "open_panel"),
@@ -14,6 +17,7 @@ object ToolGroups {
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
             "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "arm_stop",
         ),
+        KIDS to listOf("kids_start", "kids_question", "kids_cheer", "kids_end"),
     )
     const val OTHER = "その他"
 

@@ -34,7 +34,24 @@ class McpToolsListTest {
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
             "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "rigel_notify", "get_notices", "arm_stop",
             "run_part", "save_part", "delete_part",
+            "kids_start", "kids_question", "kids_cheer", "kids_end",
         ), names)
+    }
+
+    /**
+     * まなびの道具は「まなび」のまとまりで、お勉強の画面を変えるので読むだけではない (読むだけのエージェントには出さない)。
+     * 子どもモードで使える道具は、どれも本物の道具の一覧にある
+     */
+    @Test fun kidsToolsAreGroupedAndNotReadOnly() {
+        val list = McpTools(graph()).list()
+        val byName = (0 until list.length()).map { list.getJSONObject(it) }.associateBy { it.getString("name") }
+        for (t in listOf("kids_start", "kids_question", "kids_cheer", "kids_end")) {
+            assertEquals(ToolGroups.KIDS, ToolGroups.of(t))
+            assertEquals(false, byName.getValue(t).getJSONObject("annotations").getBoolean("readOnlyHint"))
+            assertEquals(false, byName.getValue(t).getJSONObject("annotations").getBoolean("destructiveHint"))
+        }
+        assertEquals(listOf("topic"), byName.getValue("kids_start").getJSONObject("inputSchema").getJSONArray("required").let { a -> (0 until a.length()).map { a.getString(it) } })
+        assertEquals(emptySet<String>(), AgentPolicy.KIDS_TOOLS - byName.keys)
     }
 
     /** get_notices は読むだけ (読むだけのエージェントにも出せる)。お知らせを預ける rigel_notify は読むだけではない */

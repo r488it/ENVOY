@@ -1,5 +1,7 @@
 package com.rabi.envoymcp.mcp
 
+import com.rabi.envoymcp.kids.Summary
+import com.rabi.envoymcp.kids.Topic
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -85,6 +87,20 @@ class ActivitySentenceTest {
         assertEquals("スマホを縦にした", build("arm_portrait", args()))
         // 知らない道具は、道具の日本語の名前
         assertEquals("道具の名前", build("brand_new_tool", args()))
+    }
+
+    /** お勉強の道具は題だけを残す (子どもが選んだもの・正しい答えは残さない)。まとめは「まなび（かず）を 5 もん した（4 もん せいかい）」 */
+    @Test fun kidsLessons() {
+        assertEquals("お勉強（とけい）を始めた", build("kids_start", args("topic" to "tokei")))
+        assertEquals("お勉強を始めようとした", build("kids_start", args("topic" to "eigo"), done = false))
+        val picked = ToolResult("子どもが「3じはん」を選びました。\n{}", JSONObject().put("chosen", "3じはん").put("answer", "4じ"))
+        val s = build("kids_question", args("same" to true), picked)
+        assertEquals("お勉強の問題を出した", s)
+        assertFalse(s.contains("3じ") || s.contains("4じ"))
+        assertEquals("子どもをほめた", build("kids_cheer", args()))
+        assertEquals("お勉強をおしまいにした", build("kids_end", args()))
+        val sum = Summary(listOf(Topic.KAZU), 5, 4, 5)
+        assertEquals("まなび（かず）を 5 もん した（4 もん せいかい）", sum.sentence)
     }
 
     @Test fun outcomeAndApproval() {
