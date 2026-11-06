@@ -63,6 +63,7 @@ internal fun KidsCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String)
             rules.aiTeacher) { a.setKidsRules(rules.copy(aiTeacher = true), say) }
         if (rules.aiTeacher) Warn("AI の先生では、子どもの声が ChatGPT に届きます。ENVOY から ChatGPT に渡すのは、問題と、子どもが選んだ答えだけです (名前などは渡しません)。")
         Note("ChatGPT のアプリが入っていないとき・きょうの時間を使い切ったときは、ひとりでのお勉強を開きます。")
+        Note("AI の先生のときは、お勉強の画面を ChatGPT の音声モードの上に重ねて出します (ChatGPT を前にしたまま、子どもの声を聞き続けられるように)。「他のアプリの上に表示」の許可を使います。音声の会話が始まらないときは、ひとりでのお勉強にします。")
 
         Sub("画面の固定")
         Toggle("ひとりでお勉強する画面を固定する (アプリの固定)", rules.pin) { a.setKidsRules(rules.copy(pin = it), say) }

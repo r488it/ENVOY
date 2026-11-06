@@ -85,7 +85,7 @@ import kotlin.math.hypot
  * - 字幕の吹き出し: 触れない窓。話している・作業している間だけ、球の上 (球が上半分にあれば下) に出す
  * - 縁の光: 画面全体の触れない窓。作業中 (show / hide) だけ、画面の縁をうっすら光らせる
  * 出すとき: ENVOY MCP の画面が前に出ていない (setOtherAppInFront) 間。設定で切っていても、作業中・返事の途中・まだ伝えていないお知らせがあるときは出す。
- * 承認画面の間は出さない (suppress)
+ * 承認画面の間と、AI の先生のお勉強の窓を出している間は出さない (suppress・setKids)
  * - Android 12 以降、他アプリの窓を通り抜けるタッチは不透明度が 0.8 を超えるとブロックされるため、alpha は 0.8 以下
  * - アクセシビリティの木には出さない (UI 階層の取得に混ざらないように)。画面の画像を取る瞬間だけ隠す (hideWhile)
  * - ENVOY MCP がタップ・スワイプを送る間は、球を素通りにする (passThroughWhile)
@@ -119,6 +119,7 @@ class OperationOverlay(
     @Volatile var wanted = false; private set
     @Volatile private var otherApp = false
     @Volatile private var suppressed = false
+    @Volatile private var kids = false
     @Volatile private var hiddenDepth = 0
     @Volatile private var passDepth = 0
 
@@ -161,12 +162,15 @@ class OperationOverlay(
     /** 承認画面などの間だけ消す。戻すと出し直す */
     fun suppress(on: Boolean) { suppressed = on; update() }
 
+    /** AI の先生のお勉強の窓 (KidsOverlay) を出している間は、どの窓も出さない (お勉強の窓の上に重ならないように) */
+    fun setKids(on: Boolean) { kids = on; update() }
+
     /** 設定を変えたとき */
     fun refresh() = update()
 
     private fun update() = main.post {
         val active = wanted || state.value.mood != Mood.IDLE
-        val can = !suppressed && canShow()
+        val can = !suppressed && !kids && canShow()
         val p = point?.takeIf { can }
         if (stageOn && can) addStage() else { remove(stageWin); stageWin = null }
         val showOrb = otherApp && can && stageWin == null && (enabled() || active || badge.value > 0) && (p == null || !orbOver(p))

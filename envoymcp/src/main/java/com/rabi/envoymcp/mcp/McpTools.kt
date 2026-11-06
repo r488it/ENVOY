@@ -451,8 +451,11 @@ class McpTools(private val g: McpGraph) : ToolHost {
 
     override suspend fun call(name: String, args: JSONObject, agent: Agent?): ToolResult? {
         val tool = byName[name] ?: return null
-        // まなびの道具: お勉強を、したことに残すときの名前 (AI の先生)
-        if (ToolGroups.of(name) == ToolGroups.KIDS) g.kids.noteTeacher(agent?.name ?: Agent.MAIN_NAME)
+        // まなびの道具: お勉強を、したことに残すときの名前 (AI の先生)。起動の速さを調べるため、最初の 1 回の時刻も残す
+        if (ToolGroups.of(name) == ToolGroups.KIDS) {
+            g.kids.noteTeacher(agent?.name ?: Agent.MAIN_NAME)
+            g.kidsOverlay.markTool(name)
+        }
         val (r, stopped) = runChecked(tool, args)
         remember(tool, args, r, if (stopped) ActivityLog.STOPPED else ActivitySentence.outcome(r), agent)
         return r

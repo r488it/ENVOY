@@ -149,6 +149,8 @@ class VoiceStage(private val g: McpGraph) {
         } + if (g.settings.voiceStage) "" else " (stage off)")
         // モニターにつながっていれば、音声モードの声をモニターのスピーカーから出す (出せる機器なら)
         g.monitorStage.routeCallAudio(mode == AudioManager.MODE_IN_COMMUNICATION)
+        // AI の先生のお勉強の窓: 音声の会話が始まったら覚え、終わったら消す
+        g.kidsOverlay.onVoiceMode(mode == AudioManager.MODE_IN_COMMUNICATION)
         if (mode == AudioManager.MODE_IN_COMMUNICATION) {
             // 音声モードが始まった: もう待たない (この後、通常に戻ればすぐ消す)
             expectUntil = 0L
@@ -326,8 +328,9 @@ class VoiceStage(private val g: McpGraph) {
     }
 
     private fun show() {
-        // 録画の画面が出ている間は覆わない (覆いはほかのアプリの上に出るので、カメラの映像と止めるボタンを隠してしまう)
-        if (g.recordScreenVisible) { hide(); return }
+        // 録画の画面が出ている間は覆わない (覆いはほかのアプリの上に出るので、カメラの映像と止めるボタンを隠してしまう)。
+        // AI の先生のお勉強の窓を出している間も覆わない (お勉強の窓の上に重なって、子どもが押せなくなる。窓を消したら、見張りが出し直す)
+        if (g.recordScreenVisible || g.kidsOverlay.showing) { hide(); return }
         if (!showing) {
             showing = true; RabiLog.i("stage", "show"); startLevel()
             // 端末の音を聞いたままになっていないかを記録に残す

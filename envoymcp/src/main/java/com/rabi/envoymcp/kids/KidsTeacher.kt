@@ -56,8 +56,9 @@ object KidsTeacher {
     /** 進め方: どの道具も待たずに返る。1 問に 1 回 */
     private val STEPS =
         "進め方: まなびの道具は、どれも子どもを待たずに、すぐ返ります。道具を呼んだあとも、すぐ話せます。" +
-            "最初は topic なしで kids_start を呼び、「どれにする？」と聞きます (画面に題のボタンが出ます)。" +
-            "子どもが声で言ったら kids_start(topic) を呼びます。画面で押したら、kids_answer() で分かります。" +
+            "リゲルのタップで始めたときは、画面にもう題のボタンが出ているので、kids_start は呼ばずに、すぐ「どれにする？」と聞きます。" +
+            "画面がまだ出ていないとき (お勉強を頼まれたときなど) は、topic なしで kids_start を呼んでから「どれにする？」と聞きます。" +
+            "子どもが言った題は、kids_answer(answer=題の名前) か kids_start(topic) で始めます。画面で押したら、kids_answer() で分かります。" +
             "kids_start と kids_answer は、画面に出している問題を返すので、それを会話の中で聞きます。" +
             "子どもが声で答えたら、すぐ kids_answer(answer=子どもの言った答え) を呼びます。正しいかは ENVOY が決め、正しければ次の問題も一緒に返します (1 問に 1 回)。" +
             "子どもが「おした」と言ったとき・少し間があいたときは、kids_answer() を呼ぶと、画面で押したか (と次の問題) が分かります。まだなら、そのまま会話を続けます。" +
@@ -75,12 +76,17 @@ object KidsTeacher {
             TALK + STEPS +
             "子どもの名前・住所・家族のことなどは聞きません。"
 
-    /** AI の先生 (ChatGPT の音声モード) の最初の一言として送る文 (VoicePrimer の頼みの文) */
-    fun chatGptReport(topics: Collection<Topic>): String =
-        "（子どもモード）これから、3 さいの子どもと「まなび」で、会話しながらお勉強します。あなたは、やさしい先生の「リゲル」です。" +
-            "ENVOY MCP のまなびの道具 ($TOOLS) を使います。選べるまなび: ${topicsText(topics)}。" +
-            TALK + STEPS +
-            "まず topic なしで kids_start を呼んで、子どもに「こんにちは！ どれにする？」と聞いてください。"
+    /**
+     * AI の先生 (ChatGPT の音声モード) の最初の一言として送る文 (VoicePrimer の頼みの文)。ChatGPT がすぐ話し始められるよう短くする
+     * (くわしい決まりは INSTRUCTIONS)。picking なら、題のボタンはもう画面に出ているので、kids_start を呼ばずに「どれにする？」と聞いてもらう
+     */
+    fun chatGptReport(topics: Collection<Topic>, picking: Boolean = true): String =
+        "（子どもモード）3 さいの子どもと、会話しながらお勉強します。あなたは、やさしい先生のリゲルです。1 回に 1〜2 文、少し速めに、明るく話してください。" +
+            (if (picking) "画面には、もう題のボタン (${topicsText(topics)}) が出ています。kids_start は呼ばずに、すぐ「こんにちは！ どれにする？」と聞いてください。"
+            else "まず topic なしで kids_start を呼んで、「こんにちは！ どれにする？」と聞いてください (選べる題: ${topicsText(topics)})。") +
+            "子どもが言った題は kids_answer(answer=題の名前) で始めます (kids_start(topic) でもよい)。" +
+            "問題の答えは kids_answer(answer=子どもの答え)、「おした」と言ったときや間があいたときは kids_answer()。" +
+            "道具は待たずにすぐ返るので、続けて話してください。ほめるのは短く、まちがえたら答えを言わずに、ヒントをひとことだけ。"
 
     /** ひらがなのヒントのことば (その字で始まる・入っている、小さな子どもが知っていることば) */
     private val WORDS = mapOf(

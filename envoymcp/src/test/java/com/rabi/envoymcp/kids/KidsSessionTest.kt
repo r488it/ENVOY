@@ -136,32 +136,41 @@ class KidsSessionTest {
     }
 
     /**
-     * AI の先生に渡す文: 改行が無く、選んだ題だけを入れる。会話しながらテンポよく (1〜2 文・少し速め・問題を会話に入れる)。
-     * 待つ道具は無いので、すぐ話してよい。最初は topic なしの kids_start で「どれにする？」。声の答えは kids_answer(answer=…)、押したかは kids_answer()
+     * 最初の一言 (ChatGPT): 短く、改行が無く、選んだ題だけを入れる。会話しながらテンポよく (1〜2 文・少し速め)。
+     * 題のボタンはもう画面に出ているので、kids_start を呼ばずに「どれにする？」と聞く。言った題は kids_answer(answer=題の名前)。
+     * 声の答えは kids_answer(answer=…)、押したかは kids_answer()。道具はすぐ返るので続けて話す
      */
-    @Test fun teacherTexts() {
+    @Test fun teacherReportIsShortAndSkipsKidsStart() {
         val two = KidsTeacher.chatGptReport(setOf(Topic.TOKEI, Topic.KAZU))
         assertFalse(two.contains('\n'))
         assertTrue(two.contains("かず・とけい"))
         assertFalse(two.contains("ひらがな"))
-        val chatgpt = KidsTeacher.chatGptReport(Topic.entries)
-        assertTrue(chatgpt.contains("かず・ひらがな・とけい"))
-        for (text in listOf(chatgpt, KidsTeacher.INSTRUCTIONS)) {
-            assertTrue(text.contains("会話しながら"))
-            assertTrue(text.contains("1〜2 文"))
-            assertTrue(text.contains("少し速め"))
-            assertTrue(text.contains("りんごが いくつ あるかな？ りんご すき？"))
-            assertTrue(text.contains("すぐ返ります"))
-            assertTrue(text.contains("topic なしで kids_start"))
-            assertTrue(text.contains("どれにする？"))
-            assertTrue(text.contains("kids_answer(answer="))
-            assertTrue(text.contains("kids_answer()"))
-            assertTrue(text.contains("end_voice_chat"))
-            // 待つ道具の使い方は書かない
-            assertFalse(text.contains("kids_question") || text.contains("same=true") || text.contains("wait=false"))
+        val report = KidsTeacher.chatGptReport(Topic.entries)
+        assertTrue(report, report.length < 400)
+        assertTrue(report.length * 2 < KidsTeacher.INSTRUCTIONS.length)
+        for (words in listOf("もう題のボタン", "かず・ひらがな・とけい", "kids_start は呼ばずに", "どれにする？", "kids_answer(answer=題の名前)",
+            "kids_answer(answer=子どもの答え)", "kids_answer()", "1〜2 文", "少し速め", "すぐ返る", "答えを言わずに")) {
+            assertTrue(words, report.contains(words))
         }
-        assertTrue(KidsTeacher.INSTRUCTIONS.contains("3 さい"))
-        assertTrue(KidsTeacher.INSTRUCTIONS.contains("kids_start・kids_answer・kids_cheer・kids_end"))
+        // 重ねる窓を出せないとき: 先に kids_start (topic なし) で題のボタンを出してもらう
+        val notReady = KidsTeacher.chatGptReport(Topic.entries, picking = false)
+        assertTrue(notReady.contains("topic なしで kids_start"))
+        assertFalse(notReady.contains("kids_start は呼ばずに"))
+        for (text in listOf(report, notReady)) assertFalse(text.contains("kids_question") || text.contains("same=true") || text.contains("wait=false"))
+    }
+
+    /**
+     * 子どもモードの間の最初の案内 (MCP): 会話しながらテンポよく (1〜2 文・少し速め・問題を会話に入れる)。道具はすぐ返る。
+     * リゲルのタップで始めたときは題のボタンがもう出ているので kids_start を呼ばない。まだ出ていなければ topic なしの kids_start
+     */
+    @Test fun teacherInstructions() {
+        val text = KidsTeacher.INSTRUCTIONS
+        for (words in listOf("3 さい", "kids_start・kids_answer・kids_cheer・kids_end", "会話しながら", "1〜2 文", "少し速め",
+            "りんごが いくつ あるかな？ りんご すき？", "すぐ返ります", "もう題のボタンが出ている", "kids_start は呼ばずに", "topic なしで kids_start",
+            "どれにする？", "kids_answer(answer=題の名前)", "kids_answer(answer=", "kids_answer()", "end_voice_chat", "time_up")) {
+            assertTrue(words, text.contains(words))
+        }
+        assertFalse(text.contains("kids_question") || text.contains("same=true") || text.contains("wait=false"))
         assertTrue(KidsTeacher.CHEERS.contains(KidsTeacher.cheer(Random(3))))
     }
 

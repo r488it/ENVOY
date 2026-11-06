@@ -29,7 +29,8 @@ internal class KidsTools(st: ToolState) : ToolGroup(st) {
         return ok("リゲルがうれしい顔をして、画面に星を出しました (腕につながっていて手が空いていれば、腕もうれしい動きをします)。")
     }
 
-    suspend fun end(): ToolResult = result(main { g.kids.endAi() })
+    /** おしまい: おわりの画面を出し、重ねる窓なら少し見せてから消す (ChatGPT の音声モードの画面に戻る) */
+    suspend fun end(): ToolResult = result(main { g.kids.endAi().also { g.kidsOverlay.hideAfter() } })
 
     /** お勉強の中の状態は、メインスレッドだけで触る */
     private suspend fun <T> main(block: () -> T): T = withContext(Dispatchers.Main) { block() }

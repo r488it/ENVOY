@@ -36,8 +36,9 @@ class KidsLessonTest {
         override fun log(who: String, tool: String, sentence: String) { logs += "$who|$tool|$sentence" }
         val expressions = ArrayList<Expression>()
         override fun express(e: Expression) { expressions += e }
-        var opened = 0
-        override fun open() { opened++ }
+        /** 開いた画面 (true: AI の先生の画面 = 重ねる窓、false: ひとりの画面) */
+        val opened = ArrayList<Boolean>()
+        override fun open(ai: Boolean) { opened += ai }
         var clock = 0L
         override fun now() = clock
         override fun today() = "d1"
@@ -54,7 +55,7 @@ class KidsLessonTest {
         assertEquals(AiResult.Picking(Topic.entries), l.startAi(null, null))
         assertEquals(Mode.PICK, l.view.value.mode)
         assertTrue(l.view.value.ai)
-        assertEquals(1, host.opened)
+        assertEquals(listOf(true), host.opened)
         // まだ選んでいない
         assertEquals(AiResult.Picking(Topic.entries), l.answerAi(null))
         l.pickTopic(Topic.TOKEI)
@@ -242,5 +243,42 @@ class KidsLessonTest {
         assertEquals(next.speech, l.view.value.speech)
         assertEquals(AiResult.NotStarted, l.answerAi(null))
         assertNotNull(l.view.value.question)
+    }
+
+    /**
+     * リゲルのタップで始めるとき: ChatGPT を開く前に、題を選ぶ画面を AI の先生の画面 (重ねる窓) で出しておく。
+     * そのあと ChatGPT が kids_start を呼んでも、子どもがもう選んでいれば選び直させない (選んだ題と最初の問題を伝える)
+     */
+    @Test fun pickerIsReadyBeforeTheTeacherSpeaks() = runTest {
+        val l = lesson()
+        assertEquals(AiResult.Picking(Topic.entries), l.startAi(null, null))   // openKids が ChatGPT を開く前に呼ぶ
+        assertEquals(listOf(true), host.opened)
+        l.pickTopic(Topic.HIRAGANA)
+        val q = l.view.value.question!!
+        val c = l.startAi(null, null) as AiResult.Checked
+        assertEquals(Topic.HIRAGANA, c.picked)
+        assertSame(q, c.question)
+        assertEquals(Mode.ASK, l.view.value.mode)
+        // まだ選んでいないときに kids_start を呼んでも、題を選ぶ画面のまま
+        l.startAi(null, null)
+        assertEquals(AiResult.Picking(Topic.entries), l.startAi(null, null))
+        assertEquals(Mode.PICK, l.view.value.mode)
+    }
+
+    /** 開く画面: AI の先生は重ねる窓 (時間切れのときも)、ひとりはお勉強の画面 */
+    @Test fun teacherOpensTheOverlayAndAloneOpensTheScreen() = runTest {
+        val l = lesson()
+        l.openAlone()
+        assertEquals(listOf(false), host.opened)
+        assertFalse(l.view.value.ai)
+        l.startAi(Topic.TOKEI, null)
+        assertEquals(listOf(false, true), host.opened)
+        assertTrue(l.view.value.ai)
+        host.limitMin = 1
+        l.shown()
+        host.clock = 61_000L
+        assertEquals(AiResult.TimeUp, l.startAi(null, null))
+        assertEquals(listOf(false, true, true), host.opened)
+        assertEquals(Mode.TIME_UP, l.view.value.mode)
     }
 }

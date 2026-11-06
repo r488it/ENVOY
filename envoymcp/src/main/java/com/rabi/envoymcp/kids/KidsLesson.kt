@@ -31,8 +31,8 @@ interface KidsHost {
     fun log(who: String, tool: String, sentence: String)
     /** リゲルの表情 (腕につながっていて手が空いていれば、腕も同じような動き) */
     fun express(e: Expression)
-    /** お勉強の画面を開く (前に出す) */
-    fun open()
+    /** お勉強の画面を開く (前に出す)。ai なら AI の先生の画面 (本物は、ChatGPT の上に重ねる窓) */
+    fun open(ai: Boolean)
     fun now(): Long
     /** 今日を表す文字 (年月日) */
     fun today(): String
@@ -42,7 +42,8 @@ interface KidsHost {
  * お勉強 (まなび) の進み方。お勉強の画面 (KidsActivity) と、まなびの道具 (KidsTools) が分け合う。
  * - ひとりで: 画面で題を選び、5 もんずつ出す。リゲルが問題を読み上げる (端末の中の読み上げ。外には何も送らない)。
  *   正しく押したら星とリゲルのうれしい顔 (腕も)。少ししてから次の問題。まちがえたら「もういちど やってみよう」
- * - AI の先生: 道具はどれも子どもを待たずにすぐ返る (待っている間は AI が話せないため)。子どもは声でも画面を押しても答えられる。
+ * - AI の先生: 画面は ChatGPT の上に重ねる窓 (KidsOverlay) に出す。道具はどれも子どもを待たずにすぐ返る (待っている間は AI が話せないため)。
+ *   子どもは声でも画面を押しても答えられる。
  *   声の答えは AI が kids_answer(answer) で渡し、ENVOY が今の問題と比べる (KidsAnswer)。画面で押した答えは、次の kids_answer で伝える。
  *   正しければ、次の問題を決めて同じ結果で返す (1 問に 1 回)。画面は星を少し見せてから次の問題にする
  * - 時間: 子どもモードの間、お勉強の画面が出ている長さを 1 日ごとに数え、決めた長さで「きょうは ここまで」にする
@@ -178,7 +179,7 @@ class KidsLesson(private val host: KidsHost, private val scope: CoroutineScope, 
             over() -> timeUp()
             v.ai || v.mode != Mode.ASK || session?.current == null -> pick()
         }
-        host.open()
+        host.open(ai = false)
     }
 
     /** 題を選ぶところにする (ひとりで。途中の回は、したことに残してしまう) */
@@ -223,30 +224,34 @@ class KidsLesson(private val host: KidsHost, private val scope: CoroutineScope, 
     fun noteTeacher(name: String) { teacher = name }
 
     /**
-     * AI の先生: 始める。子どもモードがオフならオンにし、お勉強の画面を開く。
+     * AI の先生: 始める。子どもモードがオフならオンにし、お勉強の画面を開く (画面の中身を決めてから開く。開いたときから題のボタンが見える)。
      * topic が無ければ、題を選ぶボタンを出して返す (子どもは声か画面で選ぶ)。子どもがもう画面で選んでいれば、それを返す。
-     * topic があれば、その題で最初の問題を画面に出して返す
+     * topic があれば、その題で最初の問題を画面に出して返す。
+     * リゲルのタップで始めるときは、ChatGPT を開く前に topic なしで呼ぶ (McpGraph.openKids)
      */
     fun startAi(t: Topic?, level: Int?): AiResult {
         if (!host.kidMode) setKidMode(true, teacher)
         if (t != null && t !in host.topics) return AiResult.NotEnabled(enabled())
-        if (over()) { timeUp(); host.open(); return AiResult.TimeUp }
+        if (over()) { timeUp(); host.open(ai = true); return AiResult.TimeUp }
         flush()
-        host.open()
-        if (t == null) {
-            if (aiLed && pickedByChild != null) return check("")
-            dropPending()
-            finish()
-            session = null
-            reports.clear()
+        val r = if (t == null) {
+            if (aiLed && pickedByChild != null) check("")
+            else {
+                dropPending()
+                finish()
+                session = null
+                reports.clear()
+                aiLed = true
+                show(View(mode = Mode.PICK, message = KidsTeacher.PICK))
+                AiResult.Picking(enabled())
+            }
+        } else {
             aiLed = true
-            show(View(mode = Mode.PICK, message = KidsTeacher.PICK))
-            return AiResult.Picking(enabled())
+            begin(t, level)
+            AiResult.Started(t, askNext(null, null), progress())
         }
-        aiLed = true
-        begin(t, level)
-        val q = askNext(null, null)
-        return AiResult.Started(t, q, progress())
+        host.open(ai = true)
+        return r
     }
 
     /**
@@ -463,9 +468,13 @@ class KidsLesson(private val host: KidsHost, private val scope: CoroutineScope, 
 
     /** 本物のまわり (McpGraph: 設定・したこと・リゲルの表情・お勉強の画面) */
     class GraphHost(private val g: McpGraph) : KidsHost {
+        /** 入れたら読み上げを先に用意し、切ったらお勉強の窓を消して読み上げをしまう */
         override var kidMode: Boolean
             get() = g.settings.kidsMode
-            set(v) { g.settings.kidsMode = v }
+            set(v) {
+                g.settings.kidsMode = v
+                if (v) g.kidsVoice() else { g.kidsOverlay.hide("kid mode off"); g.releaseKidsVoice() }
+            }
         override val topics: Set<Topic> get() = g.settings.kidsTopics
         override val limitMin: Int get() = g.settings.kidsLimitMin
         override fun level(t: Topic): Int = g.settings.kidsLevel(t)
@@ -478,7 +487,11 @@ class KidsLesson(private val host: KidsHost, private val scope: CoroutineScope, 
             set(v) { g.settings.kidsUsedDay = v }
         override fun log(who: String, tool: String, sentence: String) = g.activity.add(who, tool, sentence, ActivityLog.KIND_ACT, ActivityLog.OK)
         override fun express(e: Expression) = g.express(e)
-        override fun open() = KidsActivity.open(g.context)
+        /** AI の先生は、ChatGPT の上に重ねる窓 (出せなければお勉強の画面)。ひとりは、お勉強の画面 */
+        override fun open(ai: Boolean) {
+            if (ai && g.kidsOverlay.show()) return
+            KidsActivity.open(g.context)
+        }
         override fun now(): Long = System.currentTimeMillis()
         override fun today(): String = LocalDate.now().toString()
     }

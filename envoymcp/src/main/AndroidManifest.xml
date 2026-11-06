@@ -157,6 +157,16 @@
             android:taskAffinity="com.rabi.envoymcp.kids"
             android:theme="@style/Theme.Rabi" />
 
+        <!-- AI の先生のお勉強の窓の「おとなの人」: 本人確認 (指紋・PIN) だけを出す透明な画面 -->
+        <activity
+            android:name="com.rabi.envoymcp.kids.KidsOwnerActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity="com.rabi.envoymcp.kidsowner"
+            android:theme="@style/Theme.Rabi.Transparent" />
+
         <activity
             android:name="com.rabi.envoymcp.ui.approval.ApprovalActivity"
             android:excludeFromRecents="true"

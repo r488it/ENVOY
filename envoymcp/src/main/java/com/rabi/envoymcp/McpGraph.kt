@@ -32,7 +32,9 @@ import com.rabi.envoymcp.device.AppShortcuts
 import com.rabi.envoymcp.device.SwitchingDeviceController
 import com.rabi.envoymcp.device.adb.AdbConnector
 import com.rabi.envoymcp.kids.KidsLesson
+import com.rabi.envoymcp.kids.KidsOverlay
 import com.rabi.envoymcp.kids.KidsTeacher
+import com.rabi.envoymcp.kids.KidsVoice
 import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.mcp.Agents
 import com.rabi.envoymcp.mcp.McpServer
@@ -169,6 +171,19 @@ class McpGraph(val context: Context) {
         kidMode = { settings.kidsMode })
     /** まなび (子どもモードのお勉強): お勉強の画面とまなびの道具が分け合う進み方・時間 */
     val kids by lazy { KidsLesson(KidsLesson.GraphHost(this), scope) }
+    /** AI の先生のときのお勉強の画面 (ChatGPT の音声モードの上に重ねる窓。ChatGPT を前にしたまま、マイクを止めない) */
+    val kidsOverlay by lazy { KidsOverlay(this) }
+    /** ひとりでお勉強するときの読み上げ (子どもモードに入ったとき・子どもモードで起動したときに用意しておく。切ったらしまう) */
+    private var kidsVoiceHolder: KidsVoice? = null
+
+    /** 読み上げ (無ければ用意する)。メインスレッドで呼ぶ */
+    fun kidsVoice(): KidsVoice = kidsVoiceHolder ?: KidsVoice(context).also { kidsVoiceHolder = it; RabiLog.i("kids", "voice prepared") }
+
+    /** 読み上げを止める (お勉強の画面が隠れた。用意はそのまま) */
+    fun stopKidsVoice() { kidsVoiceHolder?.stop() }
+
+    /** 読み上げをしまう (子どもモードを切った) */
+    fun releaseKidsVoice() { kidsVoiceHolder?.shutdown(); kidsVoiceHolder = null }
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
     /** 画面の理解で Claude を使うときの、本人の Anthropic の API キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
@@ -332,10 +347,12 @@ class McpGraph(val context: Context) {
      * 2. ENVOY MCP のホームを出す
      * 3. 覆いを消す
      * ユーザー補助のみ (または ADB が無い) ときは強制停止できないので、ChatGPT の「終了」をユーザー補助で押して会話を終え、
-     * ホームに戻ってから、裏に回った ChatGPT を終えるよう Android に頼む。どちらも無ければホームに戻るだけ (音声の会話は裏で続く)
+     * ホームに戻ってから、裏に回った ChatGPT を終えるよう Android に頼む。どちらも無ければホームに戻るだけ (音声の会話は裏で続く)。
+     * AI の先生のお勉強の窓を出していれば、それも消す
      */
     fun closeChatGpt(goHome: Boolean = true) {
         RabiLog.i("graph", "close ChatGPT (home $goHome)")
+        kidsOverlay.hide("voice closed")
         voiceStage.beginClose()
         scope.launch(Dispatchers.IO) {
             try {
@@ -548,17 +565,27 @@ class McpGraph(val context: Context) {
      * お勉強を開く (子どもモードのリゲルのタップ・腕の呼び名・ホームの「まなび」・設定の「お勉強をはじめる」)。
      * - おうちの人が「AI の先生」を選んでいれば (最初はオン): ChatGPT の音声モードを、子どもの先生として開く。
      *   話し相手の AI の設定にかかわらず ChatGPT にする (自分から話しかけられ、考えていることを読み上げないので、小さな子どもとの会話に向く)。
-     *   最初の一言に先生の役の文を送る (いつもの最初の一言とお知らせは送らない)
+     *   最初の一言に先生の役の文を送る (いつもの最初の一言とお知らせは送らない)。
+     *   ChatGPT を開く前に、重ねる窓 (KidsOverlay) で題を選ぶ画面を出しておく (ChatGPT が開くのを待たない。窓は ChatGPT の上に重なったまま)。
+     *   先生の役の文では、題のボタンがもう出ているので、kids_start を呼ばずに「どれにする？」と聞いてもらう (道具の往復を 1 回減らす)。
+     *   重ねる窓を出せない (「他のアプリの上に表示」が無い) ときは、kids_start から始めてもらう
      * - 「ひとりで」を選んでいるとき・ChatGPT を開けないとき・きょうの時間を使い切ったとき: お勉強の画面を開く (スマホの中だけで動き、外には何も送らない)
      */
     fun openKids(from: String) {
         RabiLog.i("graph", "kids ($from)")
         if (!settings.kidsAiTeacher || kids.over()) { kids.openAlone(); return }
+        kidsOverlay.markOpen()
+        val picking = kidsOverlay.canShow()
+        if (picking) {
+            kids.startAi(null, null)
+            kidsOverlay.expectVoice()
+        }
         voiceStage.expectVoice()
-        voicePrimer.expectReport(KidsTeacher.chatGptReport(settings.kidsTopics), withBase = false)
+        voicePrimer.expectReport(KidsTeacher.chatGptReport(settings.kidsTopics, picking), withBase = false) { kidsOverlay.mark("primer sent") }
         if (!openChatGptVoice()) {
             RabiLog.w("graph", "cannot open ChatGPT")
             voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() }
+            kidsOverlay.hide("no ChatGPT")
             kids.openAlone()
         }
     }
@@ -725,6 +752,8 @@ class McpGraph(val context: Context) {
         arm.onRecordStarted = { RecordActivity.open(context) }
         // リゲルの気分を、AgentARM の光にも出す
         scope.launch { state.map { it.mood }.distinctUntilChanged().collect { arm.setMood(it) } }
+        // 子どもモードで起動したら、お勉強の読み上げを先に用意しておく (お勉強の画面を開いてから待たないように)
+        if (settings.kidsMode) kidsVoice()
     }
 
     companion object {
