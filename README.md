@@ -1,5 +1,9 @@
 # AgentPhone ― ENVOY MCP
 
+[![AgentPhone のデモ動画（2 分 56 秒・YouTube）](https://img.youtube.com/vi/mbPeMaOihG0/hqdefault.jpg)](https://www.youtube.com/watch?v=mbPeMaOihG0)
+
+▶ **デモ動画（2 分 56 秒）**: https://www.youtube.com/watch?v=mbPeMaOihG0
+
 ![リゲル](docs/images/rigel_hero.jpg)
 
 **スマホに、からだを。話しかけるだけで、AI エージェントがスマホを動かす。**
