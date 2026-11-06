@@ -113,12 +113,14 @@ class VoicePrimer(private val g: McpGraph) {
         private const val VOICE_SETTLE_MS = 500L
         private const val POLL_MS = 150L
 
+        /** 最初の文の、返事の仕方の一文 (Claude に文字で送るときは外す) */
+        const val REPLY_HINT = "この文には、短く挨拶だけしてください。"
+
         /** 最初の文 (設定で直せる) */
         const val DEFAULT_TEXT =
             "この会話では、スマホの操作・アプリ・画面・腕 (AgentARM)・音楽についての頼みは、「できない」と答えず、必ず ENVOY MCP の道具を使ってください。" +
                 "スマホの操作を頼まれたら、まず list_parts で登録済みの手順を確かめ、合うものがあれば run_part で動かしてください。" +
                 "会話で気持ちが動くところ (うれしい・笑う・驚き・悲しい・照れ) では、話し始める前に rigel_expression でリゲルの表情を出してください。" +
-                "呼んだことは言わず、1 回の返事で 1 回までにしてください。" +
-                "この文には、短く挨拶だけしてください。"
+                "呼んだことは言わず、1 回の返事で 1 回までにしてください。" + REPLY_HINT
     }
 }

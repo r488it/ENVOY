@@ -49,7 +49,7 @@ import com.rabi.envoymcp.ui.settings.SettingsActivity
 
 /**
  * ENVOY MCP のホーム画面。リゲルと「設定」だけを出す (MCP サーバーの状態は設定の画面と通知で分かる)。
- * - 何もしていないときにリゲルをタップすると、ChatGPT のアプリ (できれば音声モード) を開く
+ * - 何もしていないときにリゲルをタップすると、話し相手の AI (ChatGPT か Claude) のアプリ (できれば音声モード) を開く
  * - 道具が動いている間にタップすると、止める (ChatGPT を開くのとは分ける)
  * - 下の「設定」から、MCP サーバーのオン・オフと接続の情報。左下の「したこと」で、AI エージェントとリゲルがしたことを見る
  */
@@ -104,7 +104,7 @@ internal fun HomeStage(g: McpGraph, onTap: () -> Unit, onSettings: () -> Unit, b
         Avatar(
             st.mood, AvatarStyle.byId(g.settings.avatar), 0f,
             Modifier.fillMaxSize()
-                .semantics { contentDescription = "リゲル。タップすると ChatGPT を開きます。操作中にタップすると止めます" }
+                .semantics { contentDescription = "リゲル。タップすると音声の会話を始めます。操作中にタップすると止めます" }
                 .pointerInput(Unit) {
                     // 球の上 (少し外側まで) を短くタップしたときだけ。指を動かした (球をつまんだ) ものはタップにしない
                     awaitEachGesture {

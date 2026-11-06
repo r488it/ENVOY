@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PrecisionManufacturing
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -71,6 +72,7 @@ internal enum class Section(val title: String, val icon: ImageVector) {
 internal object CardTitle {
     const val SERVER = "MCP サーバー"
     const val TUNNEL = "トンネル (スマホの中の tunnel-client)"
+    const val PUBLIC = "Claude から使う（外からつなぐ）"
     const val CONTROL = "端末の操作の方式"
     const val OVERLAY = "他のアプリの上に表示"
     const val VISION = "画面の理解（AI で画面を読む）"
@@ -91,9 +93,11 @@ private class Check(val icon: ImageVector, val name: String, val status: String,
 internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (Section, String) -> Unit) {
     val server by g.server.state.collectAsState()
     val tunnel by g.tunnel.state.collectAsState()
+    val publicSt by g.publicTunnel.state.collectAsState()
     val arm by g.arm.status.collectAsState()
     val serverOn = remember(tick) { g.settings.serverEnabled }
     val tunnelOn = remember(tick) { g.settings.tunnelEnabled }
+    val publicOn = remember(tick) { g.settings.publicTunnelEnabled }
     val mode = remember(tick) { g.settings.controlMode }
     val a11yOn = remember(tick) { A11yService.instance != null }
     val canOverlay = remember(tick) { g.overlay.canShow() }
@@ -111,6 +115,9 @@ internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (
             if (!tunnelOn) "スマホの中では動かしていません" else tunnel.label,
             when { !tunnelOn -> null; tunnel is TunnelClient.State.Ready -> true; tunnel is TunnelClient.State.Off || tunnel is TunnelClient.State.Starting -> null; else -> false },
             { open(Section.CONNECT, CardTitle.TUNNEL) }),
+        // 外からつなぐ入口 (Claude から使う) は、オンの間だけ出す
+        if (publicOn) Check(Icons.Rounded.Public, "Claude から (外からつなぐ)", publicSt.label, publicSt.ok,
+            { open(Section.CONNECT, CardTitle.PUBLIC) }) else null,
         Check(Icons.Rounded.Accessibility, "ユーザー補助",
             if (a11yOn) "オン" else if (mode == ControlMode.ADB) "オフ (ADB のみでは使いません)" else "オフ",
             if (a11yOn) true else if (mode == ControlMode.ADB) null else false,
@@ -222,6 +229,7 @@ private fun SectionRow(icon: ImageVector, title: String, summary: String, ok: Bo
 private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<Section, Pair<String, Boolean?>> {
     val server by g.server.state.collectAsState()
     val tunnel by g.tunnel.state.collectAsState()
+    val publicSt by g.publicTunnel.state.collectAsState()
     val adb by g.adb.state.collectAsState()
     val arm by g.arm.status.collectAsState()
     val photo by g.photos.status.collectAsState()
@@ -229,6 +237,7 @@ private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<S
     val s = g.settings
     val serverOn = remember(tick) { s.serverEnabled }
     val tunnelOn = remember(tick) { s.tunnelEnabled }
+    val publicOn = remember(tick) { s.publicTunnelEnabled }
     val mode = remember(tick) { s.controlMode }
     val a11yOn = remember(tick) { A11yService.instance != null }
     val canOverlay = remember(tick) { g.overlay.canShow() }
@@ -241,6 +250,8 @@ private fun sectionSummaries(g: McpGraph, a: SettingsActivity, tick: Int): Map<S
         Section.CONNECT to when {
             !serverOn -> "MCP サーバーはオフ" to null
             server !is McpServer.State.Running -> server.label to false
+            // 外からつなぐ入口 (Claude から使う) がうまくいっていない・それだけを使っているときは、その様子を出す
+            publicOn && (publicSt.ok == false || !tunnelOn) -> "オン・Claude から: ${publicSt.label}" to publicSt.ok
             !tunnelOn -> "オン・スマホの中のトンネルはオフ" to true
             tunnel is TunnelClient.State.Ready -> "オン・つながっています" to true
             tunnel is TunnelClient.State.Off || tunnel is TunnelClient.State.Starting -> "オン・トンネル: ${tunnel.label}" to null

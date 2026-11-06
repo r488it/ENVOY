@@ -32,6 +32,7 @@ import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.mcp.Agent
+import com.rabi.envoymcp.mcp.NgrokSetup
 import com.rabi.envoymcp.voice.VoicePrimer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -39,7 +40,7 @@ import kotlinx.coroutines.launch
 /**
  * ENVOY MCP の設定。MCP サーバーのオン・オフ (初期値はオフ)、tunnel-client に渡す接続の情報、
  * 前面のアプリを読むための端末の操作の接続 (ワイヤレスデバッグ)、ChatGPT から呼ばれた道具の記録。
- * 安全の設定をゆるめる変更 (承認をオフ・開発モードをオン・エージェントを足す・権限を広げる) は、ご本人か確かめてから行う (OwnerCheck)。
+ * 安全の設定をゆるめる変更 (承認をオフ・開発モードをオン・エージェントを足す・権限を広げる・外からの入口を開ける) は、ご本人か確かめてから行う (OwnerCheck)。
  */
 class SettingsActivity : ComponentActivity() {
     private val g by lazy { (application as McpApp).graph }
@@ -178,6 +179,50 @@ class SettingsActivity : ComponentActivity() {
     }
 
     fun clearKey() { g.tunnelKey.clear(); reapply() }
+
+    // ---------------------------------------------------------------- 外からつなぐ (ngrok。Claude から使う)
+
+    /**
+     * 外からつなぐ中継 (ngrok) を動かすか。オンにする (インターネットからの入口を開ける) ときは、先にご本人か確かめる (オフはすぐ)。
+     * したことに残す
+     */
+    fun setPublicTunnel(on: Boolean, say: (String) -> Unit) {
+        if (g.settings.publicTunnelEnabled == on) return
+        val change: () -> Unit = {
+            g.settings.publicTunnelEnabled = on
+            if (!on) g.publicTunnel.stop()
+            g.activity.add(ActivityLog.USER, "public_tunnel", if (on) "外からつなぐ入口を開けた（Claude から使う）" else "外からつなぐ入口を閉じた",
+                ActivityLog.KIND_ACT, ActivityLog.OK)
+            reapply()
+        }
+        if (!SafetyChange.opensEntrance(g.settings.publicTunnelEnabled, on)) { change(); return }
+        owner.ask("外からつなぐ入口を開けます", "インターネットから、このスマホの MCP サーバーに届くようになります。使えるのは、このスマホで承認した相手だけです", say, change)
+    }
+
+    /** 外からつなぐドメインを保存する (空なら消す) */
+    fun savePublicDomain(input: String): String {
+        if (input.isBlank()) { g.settings.publicDomain = ""; reapply(); return "ドメインを消しました" }
+        val d = NgrokSetup.domainOf(input) ?: return "ドメインの形ではありません (例: xxxx.ngrok-free.app)"
+        g.settings.publicDomain = d; reapply()
+        return "ドメインを保存しました ($d)"
+    }
+
+    /** ngrok の認証トークンをクリップボードから保存する (画面には出さない。保存したらクリップボードを空にする) */
+    fun saveNgrokTokenFromClipboard(): String {
+        val cm = getSystemService(ClipboardManager::class.java)
+        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        val token = NgrokSetup.tokenFrom(text)
+        NgrokSetup.tokenProblem(token)?.let { return it }
+        g.ngrokToken.write(token)
+        cm.clearPrimaryClip()
+        reapply()
+        return "ngrok の認証トークンを保存しました (${NgrokSetup.tail(token)})。クリップボードは空にしました"
+    }
+
+    fun clearNgrokToken() { g.ngrokToken.clear(); reapply() }
+
+    /** 秘密ではない文字 (コネクターの URL など) を写す */
+    fun copyPlain(text: String) = getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("ENVOY MCP", text))
 
     // ---------------------------------------------------------------- スマホの操作・承認・リゲル
 

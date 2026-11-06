@@ -36,6 +36,7 @@ import com.rabi.envoymcp.mcp.Agents
 import com.rabi.envoymcp.mcp.McpServer
 import com.rabi.envoymcp.mcp.McpTools
 import com.rabi.envoymcp.mcp.OAuthServer
+import com.rabi.envoymcp.mcp.PublicTunnel
 import com.rabi.envoymcp.mcp.ScreenVision
 import com.rabi.envoymcp.mcp.ToolLog
 import com.rabi.envoymcp.mcp.TunnelClient
@@ -58,6 +59,7 @@ import com.rabi.envoymcp.ui.approval.ConnectApproval
 import com.rabi.envoymcp.ui.approval.QuickApprovalActivity
 import com.rabi.envoymcp.ui.avatar.AvatarStyle
 import com.rabi.envoymcp.ui.overlay.OperationOverlay
+import com.rabi.envoymcp.voice.ClaudeVoice
 import com.rabi.envoymcp.voice.StageContent
 import com.rabi.envoymcp.voice.VoicePrimer
 import com.rabi.envoymcp.voice.VoiceStage
@@ -170,6 +172,8 @@ class McpGraph(val context: Context) {
     val tunnelKey = SecureStore(context, "tunnel_runtime_key")
     /** 外からつなぐトンネル (ngrok) の認証トークン (Android Keystore で暗号化して保存。画面・記録には出さない) */
     val ngrokToken = SecureStore(context, "ngrok_authtoken")
+    /** 外からつなぐ中継 (ngrok)。MCP サーバーが動いていて、本人がオンにしたときだけ動く (McpService) */
+    val publicTunnel = PublicTunnel(context)
 
     /** ChatGPT の音声モードの真ん中に重ねるリゲル */
     val voiceStage = VoiceStage(this)
@@ -183,6 +187,8 @@ class McpGraph(val context: Context) {
     @Volatile var recordScreenVisible = false
     /** リゲルのタップで開いた音声モードに、最初の一言を送る */
     val voicePrimer = VoicePrimer(this)
+    /** 話し相手の AI が Claude のとき、Claude のアプリの音声モードを開く・閉じる (お知らせは先に文字で渡す) */
+    val claudeVoice = ClaudeVoice(this)
 
     /** 音楽が流れているか (音楽の画面と、AgentARM の「音楽が流れたら踊る」で共有) */
     val musicWatch = MusicWatch(context)
@@ -356,11 +362,18 @@ class McpGraph(val context: Context) {
      * 他のアプリの上の小さなリゲルをタップした:
      * - ChatGPT が裏で音声の会話をしているとき: 会話を終えて ChatGPT を閉じる (今の画面はそのまま。操作の途中なら止める)。
      *   裏の ChatGPT を閉じるには ADB の強制停止が要る。ADB が使えなければ ChatGPT を前に出す (全画面のリゲルの × で終えてもらう)
+     * - Claude の音声モードの画面が前に出ているとき: 操作の途中なら止めるだけ。そうでなければ会話を終えてホームに戻る (ClaudeVoice.close)
      * - 会話をしていないとき: リゲルのタップと同じ (操作の途中なら止める。何もしていなければ新しい会話を始める)
      */
     fun orbTap() {
         scope.launch {
-            if (!chatGptVoiceActive()) { tapRigel("overlay"); return@launch }
+            if (!chatGptVoiceActive()) {
+                if (claudeVoice.voiceOn()) {
+                    if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) stopByUser("overlay") else claudeVoice.close()
+                    return@launch
+                }
+                tapRigel("overlay"); return@launch
+            }
             if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) stopByUser("overlay")
             val adbOk = settings.controlMode != ControlMode.A11Y && (adb.isConnected || (adb.paired && withContext(Dispatchers.IO) { adb.probeIfIdle() }))
             if (adbOk) closeChatGpt(goHome = false)
@@ -377,12 +390,23 @@ class McpGraph(val context: Context) {
     /**
      * 「ばいばい」で音声モードを終える (道具 end_voice_chat から)。ChatGPT が別れの挨拶を言い終えるのを待ってから、
      * リゲルの × と同じく音声モードを終えて ChatGPT を閉じ、ホームのリゲルに戻す。言い終えたかは、ChatGPT の声の大きさ (VoiceStage) で見る。
-     * 取れない (声に合わせて動かす設定がオフ・全画面のリゲルを出していない) ときは、決まった長さ待つ
+     * 取れない (声に合わせて動かす設定がオフ・全画面のリゲルを出していない) ときは、決まった長さ待つ。
+     * Claude と話しているとき (話し相手の AI が Claude か、Claude の音声モードの画面が出ていて、ChatGPT の音声の会話ではない) は、
+     * 声の大きさは取れないので決まった長さ待ち、Claude の「停止」を押してホームに戻る (ClaudeVoice.close)
      */
     fun endVoiceAfterGoodbye() {
         goodbyeJob?.cancel()
         goodbyeJob = scope.launch {
-            delay(GOODBYE_START_MS)                       // 道具の答えを受けて、ChatGPT が話し始めるまで
+            delay(GOODBYE_START_MS)                       // 道具の答えを受けて、話し始めるまで
+            if (!chatGptVoiceActive() && (settings.voiceAgent == VoiceAgent.CLAUDE || claudeVoice.voiceOn())) {
+                delay(GOODBYE_FIXED_MS)
+                // 前面がほかのアプリ・ENVOY MCP の画面のときは閉じない (前面が分からなければ閉じる)
+                val fg = phoneForeground()
+                if (fg != null && fg != ClaudeVoice.PKG && !claudeVoice.voiceOn()) { RabiLog.i("graph", "goodbye: Claude is not in front"); return@launch }
+                RabiLog.i("graph", "goodbye: close Claude voice")
+                claudeVoice.close()
+                return@launch
+            }
             val levelOk = voiceStage.isShowing && settings.voiceStageLevel
             if (levelOk) {
                 val t0 = System.currentTimeMillis()
@@ -429,11 +453,11 @@ class McpGraph(val context: Context) {
     }
 
     /**
-     * 腕のボードが呼び名「リゲル」を本人の声で聞いた (試験): リゲルのタップと同じく、ChatGPT の音声モードを開く。
-     * もう ChatGPT と話している・操作の途中のときは何もしない (タップと違って、操作は止めない)
+     * 腕のボードが呼び名「リゲル」を本人の声で聞いた (試験): リゲルのタップと同じく、話し相手の AI の音声モードを開く。
+     * もう ChatGPT か Claude と話している・操作の途中のときは何もしない (タップと違って、操作は止めない)
      */
     private suspend fun wakeFromArm(score: Double) {
-        if (chatGptVoiceActive()) { RabiLog.i("graph", "wake ignored (voice on)"); return }
+        if (chatGptVoiceActive() || claudeVoice.voiceOn()) { RabiLog.i("graph", "wake ignored (voice on)"); return }
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { RabiLog.i("graph", "wake ignored (acting)"); return }
         RabiLog.i("graph", "wake from arm")
         if (settings.wakeGreet) greetOnWake()
@@ -477,11 +501,13 @@ class McpGraph(val context: Context) {
      * リゲルをタップした: 道具が動いている間は止める。何もしていなければ、止めた状態を解いて ChatGPT を開く。
      * 本人にまだ伝えていないお知らせ (notices。電話のあとのこと・定期の依頼の結果) があれば、最初の一言で「N 件ある。get_notices で読んで」と頼む
      * (最初の一言は決まった文と種類・時刻だけ。中身は get_notices で外から届いた文として渡す)。
-     * 送れたものに印を付け、get_notices で読まれたら消す
+     * 送れたものに印を付け、get_notices で読まれたら消す。
+     * 話し相手の AI が Claude なら、ChatGPT ではなく Claude の音声モードを開く (openClaude)
      */
     fun tapRigel(from: String) {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser(from); return }
         clearStop()
+        if (useClaude()) { openClaude(withNotices = true); return }
         // 音声モードの真ん中のリゲルを、ChatGPT が開くのを待たずに出す (開けなければ消す)
         voiceStage.expectVoice()
         val notes = notices.notes.value
@@ -495,14 +521,37 @@ class McpGraph(val context: Context) {
 
     /**
      * デジタル アシスタントの受け口 (AssistActivity。電源ボタンの長押しなど) から開いた: 道具が動いている間は止める。
-     * 何もしていなければ ChatGPT の音声モードを開く (いつもの最初の一言だけ送る)。
+     * 何もしていなければ ChatGPT の音声モードを開く (いつもの最初の一言だけ送る)。話し相手の AI が Claude なら Claude の音声モードを開く。
      * 受け口はほかのアプリからも開けるので、リゲルのタップと違い、お知らせの引き継ぎと、止めた状態を解くこと (clearStop) はしない
      */
     fun openVoiceFromAssist() {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser("assist"); return }
+        if (useClaude()) { openClaude(withNotices = false); return }
         voiceStage.expectVoice()
         voicePrimer.expect()
         if (!openChatGptVoice()) { RabiLog.w("graph", "cannot open ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
+    }
+
+    /** リゲルのタップで Claude を開くか: 話し相手の AI が Claude で、Claude のアプリが入っているとき (入っていなければ ChatGPT を開く) */
+    private fun useClaude(): Boolean {
+        if (settings.voiceAgent != VoiceAgent.CLAUDE) return false
+        if (claudeVoice.installed()) return true
+        RabiLog.w("graph", "Claude is not installed: open ChatGPT")
+        return false
+    }
+
+    /**
+     * Claude の音声モードを開く。全画面のリゲル (VoiceStage) と最初の一言 (VoicePrimer) は使わない
+     * (どちらも ChatGPT の音声モードの画面と通話モードを見ている)。
+     * withNotices なら、まだ伝えていないお知らせを、音声モードの前に文字で渡す (送れたら消す。送れなければ残す)
+     */
+    private fun openClaude(withNotices: Boolean) {
+        val notes = if (withNotices) notices.notes.value else emptyList()
+        val handoff = Notices.handoffForClaude(notes)
+        if (handoff != null) RabiLog.i("graph", "hand off ${notes.size} notices to Claude")
+        val primer = if (settings.voicePrimer) settings.voicePrimerText else ""
+        val hint = if (handoff != null) ClaudeVoice.HINT_NOTICES else ClaudeVoice.HINT
+        if (!claudeVoice.open(ClaudeVoice.prompt(primer, handoff), hint) { notices.remove(notes.map { it.id }) }) RabiLog.w("graph", "cannot open Claude")
     }
 
     /**

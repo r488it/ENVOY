@@ -6,7 +6,7 @@ import com.rabi.envoymcp.mcp.ToolGroups
 
 /**
  * 安全の設定の変更が、守りをゆるめるか。ゆるめる変更は、ご本人か確かめてから行う (OwnerCheck)。
- * 守りを強める変更 (承認をオン・開発モードをオフ・権限を狭める・止める・消す) は、確かめずにすぐ行う。端末に触れない (試験する)
+ * 守りを強める変更 (承認をオン・開発モードをオフ・権限を狭める・止める・消す・外からの入口を閉じる) は、確かめずにすぐ行う。端末に触れない (試験する)
  */
 object SafetyChange {
     /** 確定の前の承認をゆるめるか: 承認画面か本人確認のどちらかをオフにする (両方オフなら、承認なしで確定する) */
@@ -15,6 +15,9 @@ object SafetyChange {
 
     /** 開発モードをオンにするか (止めていないエージェントの、権限の制限と期限を外す) */
     fun loosensDevMode(on: Boolean, nextOn: Boolean): Boolean = !on && nextOn
+
+    /** 外からつなぐ入口 (ngrok) を開けるか (インターネットから、このスマホの MCP サーバーに届くようになる) */
+    fun opensEntrance(on: Boolean, nextOn: Boolean): Boolean = !on && nextOn
 
     /**
      * エージェントの権限を広げるか。次のどれかなら広げる:

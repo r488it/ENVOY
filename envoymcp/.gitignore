@@ -1,5 +1,7 @@
-# scripts/build_tunnel_client.sh が作るもの (外から取ったコードのビルド結果。Git には入れない)
+# scripts/build_tunnel_client.sh と scripts/build_ngrok_tunnel.sh が作るもの (外から取ったコードのビルド結果。Git には入れない)
 src/main/jniLibs/
 src/main/assets/licenses/tunnel-client/
-# トンネルの実行ファイルを作る道具 (手元だけで使う。Git には入れない)
-scripts/
+src/main/assets/licenses/ngrok-go/
+# トンネルの実行ファイルを作る道具 (手元だけで使う。Git には入れない)。外からつなぐ中継 (tunnel/ngrok) を作る道具だけは入れる
+scripts/*
+!scripts/build_ngrok_tunnel.sh

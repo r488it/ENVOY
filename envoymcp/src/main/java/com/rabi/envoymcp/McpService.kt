@@ -12,6 +12,7 @@ import android.net.Network
 import android.os.IBinder
 import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.mcp.McpServer
+import com.rabi.envoymcp.mcp.PublicTunnel
 import com.rabi.envoymcp.mcp.TunnelClient
 import com.rabi.envoymcp.ui.settings.SettingsActivity
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +49,7 @@ class McpService : Service() {
             return START_NOT_STICKY
         }
         applyTunnel(g)
+        applyPublicTunnel(g)
         // AgentARM (本人が設定でオンにしたときだけ)
         if (g.settings.armEnabled) g.arm.start() else g.arm.stop()
         // 音楽が流れたらリゲルの画面を出す・踊る (見張りは、サービスが動いている間だけ)
@@ -103,6 +105,19 @@ class McpService : Service() {
         }
     }
 
+    /** 外からつなぐ中継 (ngrok): 本人がオンにしていて、本体・認証トークン・ドメインがそろっているときだけ動かす */
+    private fun applyPublicTunnel(g: McpGraph) {
+        val s = g.settings
+        if (!s.publicTunnelEnabled) { g.publicTunnel.stop(); return }
+        val token = g.ngrokToken.read()
+        when {
+            !g.publicTunnel.installed() -> g.publicTunnel.notReady("中継が入っていません (scripts/build_ngrok_tunnel.sh でビルドして入れ直す)")
+            token.isNullOrBlank() -> g.publicTunnel.notReady("ngrok の認証トークンがありません")
+            s.publicDomain.isBlank() -> g.publicTunnel.notReady("ドメインがありません")
+            else -> g.publicTunnel.start(PublicTunnel.Config(token, s.publicDomain, s.port))
+        }
+    }
+
     private fun bg(): CoroutineScope = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.IO).also { scope = it }
 
     /**
@@ -126,6 +141,7 @@ class McpService : Service() {
         netCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         netCallback = null
         (application as McpApp).graph.tunnel.stop()
+        (application as McpApp).graph.publicTunnel.stop()
         (application as McpApp).graph.server.stop()
         (application as McpApp).graph.arm.stop()
         (application as McpApp).graph.serviceRunning = false
@@ -137,8 +153,12 @@ class McpService : Service() {
     private fun notification(port: Int, problem: String? = null): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, SettingsActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, McpService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
-        val via = if ((application as McpApp).graph.settings.tunnelEnabled) "スマホの中の tunnel-client で ChatGPT とつなぎます" else "ChatGPT からは tunnel-client を通して届きます"
-        val text = problem ?: "このスマホの中 (127.0.0.1:$port) だけで受け付けています。$via"
+        val s = (application as McpApp).graph.settings
+        val via = if (s.tunnelEnabled) "スマホの中の tunnel-client で ChatGPT とつなぎます" else "ChatGPT からは tunnel-client を通して届きます"
+        // 外からつなぐ入口 (ngrok) を開けているときは、そのことも出し続ける
+        val where = if (s.publicTunnelEnabled) "このスマホの中 (127.0.0.1:$port) で受け付け、外からつなぐ入口 (ngrok) も開けています"
+            else "このスマホの中 (127.0.0.1:$port) だけで受け付けています"
+        val text = problem ?: "$where。$via"
         return Notification.Builder(this, McpApp.CH_SERVER)
             .setSmallIcon(R.drawable.ic_stat_orb)
             .setContentTitle(if (problem == null) "MCP サーバーが動いています" else "MCP サーバーを動かせません")

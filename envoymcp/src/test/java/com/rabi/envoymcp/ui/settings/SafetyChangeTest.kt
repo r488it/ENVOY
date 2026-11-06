@@ -36,6 +36,13 @@ class SafetyChangeTest {
         assertFalse(SafetyChange.loosensDevMode(on = false, nextOn = false))
     }
 
+    @Test fun onlyOpeningTheEntranceLoosens() {
+        // 外からつなぐ入口を開けるときだけ確かめる。閉じるのはすぐ
+        assertTrue(SafetyChange.opensEntrance(on = false, nextOn = true))
+        assertFalse(SafetyChange.opensEntrance(on = true, nextOn = false))
+        assertFalse(SafetyChange.opensEntrance(on = true, nextOn = true))
+    }
+
     @Test fun resumingAndLeavingReadOnlyWiden() {
         assertTrue(SafetyChange.widensAgent(agent(enabled = false), agent(enabled = true)))
         assertFalse(SafetyChange.widensAgent(agent(enabled = true), agent(enabled = false)))

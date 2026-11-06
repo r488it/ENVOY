@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +19,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.rabi.envoymcp.McpGraph
+import com.rabi.envoymcp.VoiceAgent
+
+/**
+ * 話し相手の AI: リゲルをタップしたときに開く音声のアプリ (ChatGPT か Claude)。安全の設定ではないので、ご本人の確認なしで切り替える。
+ * Claude のアプリが入っていなければ、そう伝える (そのあいだは ChatGPT を開く)
+ */
+@Composable
+internal fun VoiceAgentCard(g: McpGraph, tick: Int) {
+    var agent by remember(tick) { mutableStateOf(g.settings.voiceAgent) }
+    val claudeInstalled = remember(tick) { g.claudeVoice.installed() }
+    val missing = agent == VoiceAgent.CLAUDE && !claudeInstalled
+    Card("話し相手の AI", if (missing) "Claude のアプリがありません" else agent.label, !missing, icon = Icons.Rounded.RecordVoiceOver) {
+        Note("リゲルをタップしたときに開いて、声でお話しする相手を選びます。")
+        listOf(
+            VoiceAgent.CHATGPT to "ChatGPT の音声モードを開きます",
+            VoiceAgent.CLAUDE to "Claude の音声モードを開きます。Claude は、あなたが話しかけるまで待っています",
+        ).forEach { (v, desc) -> Choice(v.label, desc, agent == v) { g.settings.voiceAgent = v; agent = v } }
+        if (!claudeInstalled) Note("Claude のアプリが入っていません。入っていないあいだは、ChatGPT を開きます。")
+        Note("Claude のときは、お知らせがあれば、先に Claude へ文字で渡してから音声モードにします。「話しかけてね」と出たら、話しかけてください。はじめにお知らせを伝えます。渡した文は Claude の会話の履歴に残ります。お知らせを渡すのにユーザー補助を使います。")
+        Note("画面全体のリゲルと「最初の一言」は、ChatGPT のときだけです。電話のあとの報告と、かかってきた電話を声で尋ねるときは、いつも ChatGPT を使います。")
+    }
+}
 
 /** 音声モードの画面: ChatGPT の音声モードの間、画面全体をリゲルにする・声に合わせて動かす */
 @Composable

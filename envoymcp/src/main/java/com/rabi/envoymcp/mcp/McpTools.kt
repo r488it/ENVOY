@@ -172,7 +172,7 @@ class McpTools(private val g: McpGraph) : ToolHost {
             required = listOf("app")) { screenTools.screenshotsOff() ?: appTools.shareScreenshot(it) },
         Tool("end_voice_chat", "音声の会話を終える",
             "利用者が会話そのものを終えたいと言ったとき (「ばいばい」「またね」「おやすみ」「もういいよ」「終わり」など) に呼びます。" +
-                "呼んだら、ひとこと短く別れの挨拶をしてください。挨拶を言い終えたら、スマホが ChatGPT の音声モードを終えて閉じ、リゲルの画面に戻します。" +
+                "呼んだら、ひとこと短く別れの挨拶をしてください。挨拶を言い終えたら、スマホが音声モードを終えて閉じ、リゲルの画面に戻します。" +
                 "頼みごとの途中の言葉 (「じゃあね、田中さんに伝えておいて」など) や、ほかの人への挨拶では呼ばないでください。",
             act = false, caption = "会話を終えます", adb = false, readOnly = false) { voiceTools.endVoiceChat() },
         Tool("search_photos", "写真を言葉で探す",

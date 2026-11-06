@@ -112,10 +112,10 @@ internal fun SettingsRoot(g: McpGraph, a: SettingsActivity, tick: Int) {
 @Composable
 private fun SectionCards(s: Section, g: McpGraph, a: SettingsActivity, tick: Int, say: (String) -> Unit) {
     when (s) {
-        Section.CONNECT -> { ServerCard(g, a, tick, say); ToolsCard(g); TunnelCard(g, a, tick, say); ChatGptCard(g, a, tick, say) }
+        Section.CONNECT -> { ServerCard(g, a, tick, say); ToolsCard(g); TunnelCard(g, a, tick, say); ChatGptCard(g, a, tick, say); PublicTunnelCard(g, a, tick, say) }
         Section.OPERATE -> { ControlCard(g, a, tick); AdbCard(g, a, say); OverlayCard(g, a, tick); VisionCard(g, a, tick, say); PartsCard(g, tick) }
         Section.SAFETY -> { ApprovalCard(g, a, tick, say); AgentsCard(g, a, tick, say); ActivityLogCard(g, a) }
-        Section.RIGEL -> { VoiceStageCard(g, a, tick); PrimerCard(g, a, tick); ExpressionCard(a); MusicStageCard(g, a, tick) }
+        Section.RIGEL -> { VoiceAgentCard(g, tick); VoiceStageCard(g, a, tick); PrimerCard(g, a, tick); ExpressionCard(a); MusicStageCard(g, a, tick) }
         Section.PHONE -> PhoneCards(g, a, tick)
         Section.ARM -> ArmCards(g, a, tick, say)
         Section.PHOTO -> PhotoCard(g, a, tick)

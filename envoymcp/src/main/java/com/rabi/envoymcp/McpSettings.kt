@@ -97,6 +97,14 @@ class McpSettings(context: Context) {
         get() = ClaudeModel.from(p.getString("claude_model", null))
         set(v) = p.edit { putString("claude_model", v.id) }
 
+    /**
+     * 話し相手の AI: リゲルのタップ (ホーム・小さなリゲル・腕の呼び名・デジタル アシスタント) で開く音声のアプリ (最初は ChatGPT)。
+     * 電話のあとの報告と、かかってきた電話を声で尋ねるのは、どちらでも ChatGPT
+     */
+    var voiceAgent: VoiceAgent
+        get() = VoiceAgent.from(p.getString("voice_agent", null))
+        set(v) = p.edit { putString("voice_agent", v.id) }
+
     /** ChatGPT の音声モードの真ん中に、リゲルを重ねる */
     var voiceStage: Boolean
         get() = p.getBoolean("voice_stage", true)
@@ -288,6 +296,17 @@ enum class VisionProvider(val id: String, val label: String) {
     companion object {
         /** 保存した値から (無い・知らない値なら ChatGPT) */
         fun from(id: String?): VisionProvider = entries.firstOrNull { it.id == id } ?: CHATGPT
+    }
+}
+
+/** 話し相手の AI (リゲルのタップで開く音声のアプリ) */
+enum class VoiceAgent(val id: String, val label: String) {
+    CHATGPT("chatgpt", "ChatGPT のアプリ"),
+    CLAUDE("claude", "Claude のアプリ");
+
+    companion object {
+        /** 保存した値から (無い・知らない値なら ChatGPT) */
+        fun from(id: String?): VoiceAgent = entries.firstOrNull { it.id == id } ?: CHATGPT
     }
 }
 

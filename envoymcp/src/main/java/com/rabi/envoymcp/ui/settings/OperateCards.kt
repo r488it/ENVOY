@@ -198,7 +198,7 @@ private fun ClaudeVision(g: McpGraph, a: SettingsActivity, tick: Int, keyTail: S
 
 /** 選ぶ行 (丸いボタンと名前。説明があれば下に)。探すときは名前と説明で絞る */
 @Composable
-private fun Choice(label: String, desc: String?, selected: Boolean, onClick: () -> Unit) {
+internal fun Choice(label: String, desc: String?, selected: Boolean, onClick: () -> Unit) {
     if (!shown(label, desc.orEmpty())) return
     Row(verticalAlignment = Alignment.CenterVertically) {
         RadioButton(selected = selected, onClick = onClick)

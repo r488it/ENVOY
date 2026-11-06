@@ -15,7 +15,8 @@ import com.rabi.envoymcp.core.RabiLog
  * ENVOY MCP のユーザー補助のサービス (端末の操作の方式が「ユーザー補助」を含むときに使う)。
  * 本人が Android の設定の「ユーザー補助」でオンにしたときだけ動く。このサービス自身は何も操作せず、
  * A11yDeviceController が ChatGPT の道具の呼び出しに応じて、画面の読み取り・指の動き・全体の操作 (戻る・ホームなど) に使う。
- * ほかに、リゲルの × で ChatGPT の「終了」を押すのと、音声モードの最初の一言を送る (VoicePrimer) のにも使う。
+ * ほかに、リゲルの × で ChatGPT の「終了」を押すのと、音声モードの最初の一言を送る (VoicePrimer) のと、
+ * Claude の音声モードを開く・お知らせを文字で渡す・閉じる (ClaudeVoice) のにも使う。
  * - 前面のアプリ: 本当の画面 (Activity) に切り替わったとき (TYPE_WINDOW_STATE_CHANGED) の名前を覚えておく (前面のアプリの判定は、操作の対象の窓から読む)
  * - 内容 (画面の文字) は記録に残さない
  */
