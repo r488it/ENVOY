@@ -405,6 +405,15 @@ AgentPhone は、**年配の両親にも、小さな子どもにも、安心で�
 - シニアのスマートフォンの利用: MMD研究所「2024年シニアのスマートフォンの利用に関する調査」（2024 年 12 月、スマートフォンを持つ 60〜79 歳 1,200 人。契約や普段の利用でほかの人のサポートを受けた 51.4%）
   - https://mmdlabo.jp/investigation/detail_2396.html
 
+## ライセンス
+
+[PolyForm Noncommercial License 1.0.0](LICENSE.md)（Required Notice: Copyright 2026 taku_sid）
+
+- **非商用なら自由に使えます**: 個人での利用・学習・研究、非営利の団体（学校・公的な機関・慈善団体など）での利用、手を加えること、配ること
+- **商用で使うときは、作者の許可が要ります**: 製品やサービスに組み込む、仕事で使うなど。GitHub の Issue から作者に連絡してください
+- 正式な条件は [LICENSE.md](LICENSE.md) の英文です。日本語の参考訳は [LICENSE.ja.md](LICENSE.ja.md) にあります（意味が違うときは英文に従います）。この章は、その要約です
+- 同梱している、ほかの人のコード（下の「同梱しているもの」）は、それぞれのライセンスに従います
+
 ## 同梱しているもの
 
 - Google AI Edge Gallery の一部（Apache 2.0）: `envoymcp/src/main/assets/licenses/edge-gallery/`
