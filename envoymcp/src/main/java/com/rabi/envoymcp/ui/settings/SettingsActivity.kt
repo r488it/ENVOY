@@ -7,6 +7,7 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.biometrics.BiometricManager
 import android.os.Bundle
 import android.os.PersistableBundle
 import android.provider.Settings
@@ -25,14 +26,17 @@ import com.rabi.envoymcp.ClaudeModel
 import com.rabi.envoymcp.ControlMode
 import com.rabi.envoymcp.HomeActivity
 import com.rabi.envoymcp.McpApp
+import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.McpService
 import com.rabi.envoymcp.VisionProvider
+import com.rabi.envoymcp.VoiceAgent
 import com.rabi.envoymcp.auth.ClaudeClient
 import com.rabi.envoymcp.core.Expression
 import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.mcp.Agent
 import com.rabi.envoymcp.mcp.NgrokSetup
+import com.rabi.envoymcp.voice.ClaudeVoice
 import com.rabi.envoymcp.voice.VoicePrimer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -352,6 +356,45 @@ class SettingsActivity : ComponentActivity() {
 
     fun open(action: String) = runCatching { startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         .onFailure { RabiLog.w("settings", "cannot open $action") }
+
+    /** ENVOY MCP が、ホームアプリに選ばれているか */
+    fun isHome(): Boolean = runCatching { getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME) }.getOrDefault(false)
+
+    /**
+     * ホームアプリを選ぶ画面を開く (アプリからは選べない。本人が Android の設定で選ぶ)。
+     * 開けなければ「デフォルトのアプリ」、それも無ければ設定のトップ
+     */
+    fun openHomeSettings() {
+        if (open(Settings.ACTION_HOME_SETTINGS).isSuccess) return
+        if (open(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).isSuccess) return
+        open(Settings.ACTION_SETTINGS)
+    }
+
+    /** 画面ロック (指紋・PIN など) があり、確定の前の承認や、ご本人の確認ができるか */
+    fun hasScreenLock(): Boolean = OwnerCheck.availability(this) == BiometricManager.BIOMETRIC_SUCCESS
+
+    /** 画面ロックを決める、セキュリティの設定を開く (無ければ設定のトップ) */
+    fun openSecuritySettings() {
+        if (open(Settings.ACTION_SECURITY_SETTINGS).isSuccess) return
+        open(Settings.ACTION_SETTINGS)
+    }
+
+    fun chatGptInstalled(): Boolean = runCatching { packageManager.getPackageInfo(McpGraph.CHATGPT, 0) }.isSuccess
+
+    /** 話し相手の AI のアプリが入っているか */
+    fun aiInstalled(v: VoiceAgent): Boolean = if (v == VoiceAgent.CLAUDE) g.claudeVoice.installed() else chatGptInstalled()
+
+    /** 話し相手の AI を選ぶ (安全の設定ではないので、ご本人の確認なしで切り替える) */
+    fun setVoiceAgent(v: VoiceAgent) { g.settings.voiceAgent = v; refresh.intValue++ }
+
+    /** 話し相手の AI のアプリの、Play ストアのページを開く (ストアのアプリが無ければブラウザで)。開けなければ false */
+    fun openStore(v: VoiceAgent): Boolean {
+        val pkg = if (v == VoiceAgent.CLAUDE) ClaudeVoice.PKG else McpGraph.CHATGPT
+        val app = Intent(Intent.ACTION_VIEW, "market://details?id=$pkg".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val web = Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$pkg".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching { startActivity(app) }.recoverCatching { startActivity(web) }
+            .onFailure { RabiLog.w("settings", "cannot open the store") }.isSuccess
+    }
 
     /** ENVOY MCP が、デジタル アシスタント アプリに選ばれているか */
     fun isAssistant(): Boolean = runCatching { getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)

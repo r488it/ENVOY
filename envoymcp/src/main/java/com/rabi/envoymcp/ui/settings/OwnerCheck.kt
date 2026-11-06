@@ -1,5 +1,6 @@
 package com.rabi.envoymcp.ui.settings
 
+import android.content.Context
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
 import android.os.CancellationSignal
@@ -26,8 +27,7 @@ class OwnerCheck(private val activity: ComponentActivity) {
     fun ask(what: String, note: String, say: (String) -> Unit, change: () -> Unit) {
         if (recentlyConfirmed()) { change(); return }
         if (signal != null) return
-        val can = activity.getSystemService(BiometricManager::class.java)?.canAuthenticate(QuickApprovalActivity.AUTH)
-            ?: BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
+        val can = availability(activity)
         if (can != BiometricManager.BIOMETRIC_SUCCESS) {
             RabiLog.w("settings", "owner check unavailable: $can")
             say(when (can) {
@@ -82,6 +82,14 @@ class OwnerCheck(private val activity: ComponentActivity) {
 
     companion object {
         const val TITLE = "設定を変える前に、ご本人か確かめます"
+
+        /**
+         * 本人確認 (確定の前の承認と同じ。生体認証 (強) か、端末の PIN・パターン・パスワード) が使えるか。
+         * Android の答えの番号 (BIOMETRIC_SUCCESS なら使える。画面ロックが無ければ BIOMETRIC_ERROR_NONE_ENROLLED)
+         */
+        fun availability(context: Context): Int =
+            context.getSystemService(BiometricManager::class.java)?.canAuthenticate(QuickApprovalActivity.AUTH)
+                ?: BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
         /** 確かめてから、確かめ直さずに続けて変えられる長さ */
         private const val GRACE_MS = 60_000L
     }

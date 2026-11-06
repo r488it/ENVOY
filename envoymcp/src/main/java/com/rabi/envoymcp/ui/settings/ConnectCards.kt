@@ -81,8 +81,8 @@ internal fun TunnelCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (Strin
 /** ChatGPT のアプリ: 入っているか、開く、デジタル アシスタントに選ばれているか */
 @Composable
 internal fun ChatGptCard(g: McpGraph, a: SettingsActivity, tick: Int, say: (String) -> Unit) {
-    val installed = remember(tick) { runCatching { a.packageManager.getPackageInfo(McpGraph.CHATGPT, 0) }.isSuccess }
-    Card("ChatGPT", if (installed) "入っています" else "入っていません", installed, icon = Icons.Rounded.RecordVoiceOver) {
+    val installed = remember(tick) { a.chatGptInstalled() }
+    Card(CardTitle.CHATGPT, if (installed) "入っています" else "入っていません", installed, icon = Icons.Rounded.RecordVoiceOver) {
         Line("アプリ", if (installed) "入っています" else "入っていません", installed)
         Btn("ChatGPT を開く (リゲルのタップと同じ)") { if (!g.openChatGptVoice()) say("ChatGPT を開けませんでした") }
         Note("音声モードを直接開けるかは未確認です。開けないときは ChatGPT が開くだけなので、音声は自分で始めてください。")

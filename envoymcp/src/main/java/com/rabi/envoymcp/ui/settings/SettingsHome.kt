@@ -52,8 +52,10 @@ import androidx.compose.ui.unit.sp
 import com.rabi.envoymcp.ControlMode
 import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.a11y.A11yService
+import com.rabi.envoymcp.arm.ArmController
 import com.rabi.envoymcp.device.adb.AdbState
 import com.rabi.envoymcp.mcp.McpServer
+import com.rabi.envoymcp.mcp.PublicTunnel
 import com.rabi.envoymcp.mcp.TunnelClient
 
 /** 設定の区分 (一覧の 1 行。押すと、その区分のカードを並べた画面を開く) */
@@ -75,6 +77,7 @@ internal object CardTitle {
     const val SERVER = "MCP サーバー"
     const val TUNNEL = "トンネル (スマホの中の tunnel-client)"
     const val PUBLIC = "Claude から使う（外からつなぐ）"
+    const val CHATGPT = "ChatGPT"
     const val CONTROL = "端末の操作の方式"
     const val OVERLAY = "他のアプリの上に表示"
     const val VISION = "画面の理解（AI で画面を読む）"
@@ -87,12 +90,28 @@ internal object CardTitle {
 /** 準備の状態の 1 行: アイコン・名前・今の様子・色 (stateColor)・押したときの行き先・直す所を開くボタン (無いこともある) */
 private class Check(val icon: ImageVector, val name: String, val status: String, val ok: Boolean?, val go: () -> Unit, val fix: String? = null, val onFix: () -> Unit = {})
 
-/**
- * 準備の状態: ChatGPT からスマホを動かすのに要るものが、そろっているか。
- * 行を押すと、その設定のある区分 (または Android の設定) を開く。そろっていないものは、右のボタンで直す所を開く
- */
+/** 準備の状態の元になる、今の様子 (準備の状態と、かんたんセットアップで同じものを読む) */
+internal class ReadyNow(
+    val serverOn: Boolean, val server: McpServer.State,
+    val tunnelOn: Boolean, val tunnel: TunnelClient.State,
+    val publicOn: Boolean, val publicSt: PublicTunnel.State,
+    val mode: ControlMode, val a11yOn: Boolean, val canOverlay: Boolean, val notif: Boolean, val phone: Boolean,
+    val armOn: Boolean, val armMissing: List<String>, val arm: ArmController.Status, val dev: Boolean,
+) {
+    val serverRunning get() = server is McpServer.State.Running
+
+    /** スマホの中の tunnel-client: true はつながっている、false はうまくいっていない、null は動かしていない・動き始め */
+    val tunnelOk: Boolean? get() = when {
+        !tunnelOn -> null
+        tunnel is TunnelClient.State.Ready -> true
+        tunnel is TunnelClient.State.Off || tunnel is TunnelClient.State.Starting -> null
+        else -> false
+    }
+}
+
+/** 今の様子を読む (tick が変わったら読み直す。設定の画面に戻ってきたときも変わる) */
 @Composable
-internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (Section, String) -> Unit) {
+internal fun readyNow(g: McpGraph, a: SettingsActivity, tick: Int): ReadyNow {
     val server by g.server.state.collectAsState()
     val tunnel by g.tunnel.state.collectAsState()
     val publicSt by g.publicTunnel.state.collectAsState()
@@ -108,38 +127,48 @@ internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (
     val armOn = remember(tick) { g.settings.armEnabled }
     val armMissing = remember(tick) { a.armMissingPerms() }
     val dev = remember(tick) { g.settings.devNoAgentLimits }
+    return ReadyNow(serverOn, server, tunnelOn, tunnel, publicOn, publicSt, mode, a11yOn, canOverlay, notif, phone, armOn, armMissing, arm, dev)
+}
+
+/**
+ * 準備の状態: ChatGPT からスマホを動かすのに要るものが、そろっているか。
+ * 行を押すと、その設定のある区分 (または Android の設定) を開く。そろっていないものは、右のボタンで直す所を開く
+ */
+@Composable
+internal fun ReadyChecklist(g: McpGraph, a: SettingsActivity, tick: Int, open: (Section, String) -> Unit) {
+    val r = readyNow(g, a, tick)
     val checks = listOfNotNull(
         Check(Icons.Rounded.Dns, "MCP サーバー",
-            when { !serverOn -> "オフ"; server is McpServer.State.Running -> "動いています"; else -> server.label },
-            if (!serverOn) null else server is McpServer.State.Running,
+            when { !r.serverOn -> "オフ"; r.serverRunning -> "動いています"; else -> r.server.label },
+            if (!r.serverOn) null else r.serverRunning,
             { open(Section.CONNECT, CardTitle.SERVER) }),
         Check(Icons.Rounded.Cloud, "トンネル",
-            if (!tunnelOn) "スマホの中では動かしていません" else tunnel.label,
-            when { !tunnelOn -> null; tunnel is TunnelClient.State.Ready -> true; tunnel is TunnelClient.State.Off || tunnel is TunnelClient.State.Starting -> null; else -> false },
+            if (!r.tunnelOn) "スマホの中では動かしていません" else r.tunnel.label,
+            r.tunnelOk,
             { open(Section.CONNECT, CardTitle.TUNNEL) }),
         // 外からつなぐ入口 (Claude から使う) は、オンの間だけ出す
-        if (publicOn) Check(Icons.Rounded.Public, "Claude から (外からつなぐ)", publicSt.label, publicSt.ok,
+        if (r.publicOn) Check(Icons.Rounded.Public, "Claude から (外からつなぐ)", r.publicSt.label, r.publicSt.ok,
             { open(Section.CONNECT, CardTitle.PUBLIC) }) else null,
         Check(Icons.Rounded.Accessibility, "ユーザー補助",
-            if (a11yOn) "オン" else if (mode == ControlMode.ADB) "オフ (ADB のみでは使いません)" else "オフ",
-            if (a11yOn) true else if (mode == ControlMode.ADB) null else false,
+            if (r.a11yOn) "オン" else if (r.mode == ControlMode.ADB) "オフ (ADB のみでは使いません)" else "オフ",
+            if (r.a11yOn) true else if (r.mode == ControlMode.ADB) null else false,
             { open(Section.OPERATE, CardTitle.CONTROL) }, "設定を開く") { a.openAccessibilitySettings() },
         Check(Icons.Rounded.Layers, "他のアプリの上に表示",
-            if (canOverlay) "許可" else "未許可 (操作の道具は動きません)", canOverlay,
+            if (r.canOverlay) "許可" else "未許可 (操作の道具は動きません)", r.canOverlay,
             { open(Section.OPERATE, CardTitle.OVERLAY) }, "許可する") { a.openOverlayPermission() },
         Check(Icons.Rounded.Notifications, "通知へのアクセス",
-            if (notif) "許可" else "未許可 (曲名・着信の通知を読めません)", notif,
+            if (r.notif) "許可" else "未許可 (曲名・着信の通知を読めません)", r.notif,
             { a.openNotificationAccess() }, "許可する") { a.openNotificationAccess() },
         Check(Icons.Rounded.Call, "電話の許可",
-            if (phone) "許可" else "未許可 (電話の道具が使えません)", phone,
+            if (r.phone) "許可" else "未許可 (電話の道具が使えません)", r.phone,
             { open(Section.PHONE, CardTitle.PHONE) }, "許可する") { a.requestPhonePerms() },
         Check(Icons.Rounded.PrecisionManufacturing, "AgentARM (腕)",
-            when { !armOn -> "使わない"; armMissing.isNotEmpty() -> "許可が足りません (Bluetooth・カメラ)"; else -> arm.link },
-            when { !armOn -> null; armMissing.isNotEmpty() -> false; else -> arm.ready },
+            when { !r.armOn -> "使わない"; r.armMissing.isNotEmpty() -> "許可が足りません (Bluetooth・カメラ)"; else -> r.arm.link },
+            when { !r.armOn -> null; r.armMissing.isNotEmpty() -> false; else -> r.arm.ready },
             { open(Section.ARM, CardTitle.ARM) },
-            if (armOn && armMissing.isNotEmpty()) "許可する" else null) { a.requestArmPerms() },
+            if (r.armOn && r.armMissing.isNotEmpty()) "許可する" else null) { a.requestArmPerms() },
         // 開発モードは、オンの間だけ見てほしいものとして出す
-        if (dev) Check(Icons.Rounded.AdminPanelSettings, "開発モード", "オン: エージェントの権限の制限なし", false,
+        if (r.dev) Check(Icons.Rounded.AdminPanelSettings, "開発モード", "オン: エージェントの権限の制限なし", false,
             { open(Section.DEV, CardTitle.DEV_MODE) }, "オフにする") { a.setDevNoAgentLimits(false, say = {}) } else null,
     )
     val ready = checks.count { it.ok == true }

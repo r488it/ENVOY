@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -25,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -34,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -47,7 +51,8 @@ import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.R
 
 /**
- * 設定の画面: 一覧 (探す・準備の状態・区分) → 区分の画面 (その区分のカード)。戻るで一覧へ。
+ * 設定の画面: 一覧 (かんたんセットアップの入口・探す・準備の状態・区分) → 区分の画面 (その区分のカード)。戻るで一覧へ。
+ * かんたんセットアップは一覧の上に重ねて開き、そこから区分のカードを開いたときは、戻るとかんたんセットアップに戻る。
  * 区分のカードは、見えていない区分の分も高さ 0 で作っておく (どこからでも全部の項目を探せるように。動きも見えている時と同じ)
  */
 @Composable
@@ -59,15 +64,25 @@ internal fun SettingsRoot(g: McpGraph, a: SettingsActivity, tick: Int) {
     // 開いている区分 (null なら一覧)
     var sectionName by rememberSaveable { mutableStateOf<String?>(null) }
     val section = sectionName?.let { n -> Section.entries.firstOrNull { it.name == n } }
+    // かんたんセットアップで開いている手順の番号 (-1 なら閉じている。手順の数と同じなら終わりの画面)
+    var setupAt by rememberSaveable { mutableIntStateOf(-1) }
+    // 「あとで」にした手順の名前 (「,」で区切る。この画面を開いている間だけ覚える)
+    var skippedNames by rememberSaveable { mutableStateOf("") }
+    val skipped = remember(skippedNames) { skippedNames.split(",").mapNotNull { n -> SetupStep.entries.firstOrNull { it.name == n } }.toSet() }
+    val setupOpen = setupAt >= 0
+    val inSetup = setupOpen && section == null
     var focus by remember { mutableStateOf(Focus("", 0)) }
     fun open(s: Section, card: String = "") { sectionName = s.name; focus = Focus(card, focus.n + 1); out = "" }
     fun back() { sectionName = null; focus = Focus("", focus.n + 1) }
+    fun openSetup(at: Int) { setupAt = at; out = "" }
+    fun closeSetup() { setupAt = -1; out = "" }
     val jump = remember { { s: Section, card: String -> open(s, card) } }
     BackHandler(enabled = section != null) { back() }
+    BackHandler(enabled = inSetup) { closeSetup() }
     // 一覧で探している間は、戻るで探すのをやめる
-    BackHandler(enabled = section == null && query.isNotEmpty()) { query = "" }
-    // 区分の画面では絞り込まない (その区分を全部出す)。探した言葉は一覧に戻ったときのために残す
-    val q = if (section == null) query else ""
+    BackHandler(enabled = section == null && !setupOpen && query.isNotEmpty()) { query = "" }
+    // 区分の画面とかんたんセットアップでは絞り込まない (その区分を全部出す)。探した言葉は一覧に戻ったときのために残す
+    val q = if (section == null && !setupOpen) query else ""
     search.setQuery(q)
     val listScroll = rememberScrollState()
     val detailScroll = remember(section) { ScrollState(0) }
@@ -75,9 +90,18 @@ internal fun SettingsRoot(g: McpGraph, a: SettingsActivity, tick: Int) {
         LocalFocus provides focus, LocalJump provides jump) {
     // 上の時刻・電池の帯と、下のナビゲーションの帯に重ならないように
     Column(Modifier.fillMaxSize().background(Palette.Bg).systemBarsPadding()) {
-        if (section != null) TopBar(section) { back() }
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(if (section == null) listScroll else detailScroll).padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
-            if (section == null) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        when {
+            section != null -> TopBar(section.icon, section.title) { back() }
+            setupOpen -> TopBar(Icons.Rounded.Checklist, SETUP_BAR_TITLE) { closeSetup() }
+        }
+        if (inSetup) SetupWizard(g, a, tick, setupAt, skipped, Modifier.weight(1f),
+            go = { setupAt = it.coerceIn(0, SetupGuide.steps.size) },
+            skip = { s -> skippedNames = (skipped + s).joinToString(",") { it.name } },
+            jump = jump, close = { closeSetup() }, say = { out = it })
+        // かんたんセットアップを開いている間は、区分のカードを高さ 0 のまま作っておく
+        val body = if (inSetup) Modifier.height(0.dp).clipToBounds() else Modifier.weight(1f)
+        Column(body.fillMaxWidth().verticalScroll(if (section == null) listScroll else detailScroll).padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            if (section == null && !setupOpen) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.app_name), color = Palette.Accent, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = 6.sp, modifier = Modifier.padding(top = 16.dp))
                 Text("設定 (検証用)", color = Color.White, fontSize = 16.sp)
                 // 設定を探す: 合う項目を区分ごとに出す (見出しが合えばカードを丸ごと)。区分の名前やカードの見出しを押すと、その区分を開く
@@ -85,8 +109,12 @@ internal fun SettingsRoot(g: McpGraph, a: SettingsActivity, tick: Int) {
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("消す") } })
                 if (search.active) {
-                    if (!search.anyVisible()) Text("「${query.trim()}」に合う項目はありません", color = Palette.Muted, fontSize = 14.sp)
+                    // かんたんセットアップの名前・説明・手順の名前に合えば、入口を出す (手順の名前に合えば、その手順から開く)
+                    val setupHit = search.itemHit(*SetupGuide.searchWords.toTypedArray())
+                    if (setupHit) SetupEntry(g, a, tick, skipped, SetupGuide.matching(search.query)) { openSetup(it) }
+                    if (!setupHit && !search.anyVisible()) Text("「${query.trim()}」に合う項目はありません", color = Palette.Muted, fontSize = 14.sp)
                 } else {
+                    SetupEntry(g, a, tick, skipped) { openSetup(it) }
                     ReadyChecklist(g, a, tick, jump)
                     SectionList(g, a, tick) { open(it) }
                 }
@@ -146,17 +174,17 @@ private fun SearchHead(s: Section, onClick: () -> Unit) {
     }
 }
 
-/** 区分の画面の上の帯: 戻る矢印と、区分のアイコン・名前 */
+/** 区分の画面・かんたんセットアップの上の帯: 戻る矢印と、アイコン・名前 */
 @Composable
-private fun TopBar(section: Section, onBack: () -> Unit) {
+private fun TopBar(icon: ImageVector, title: String, onBack: () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(56.dp).clickable(role = Role.Button, onClick = onBack).semantics { contentDescription = "戻る" },
                 contentAlignment = Alignment.Center) {
                 Text("‹", color = Palette.Accent, fontSize = 32.sp, modifier = Modifier.clearAndSetSemantics { })
             }
-            IconTile(section.icon, Palette.Accent, size = 32.dp)
-            Text(section.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
+            IconTile(icon, Palette.Accent, size = 32.dp)
+            Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Divider))
     }
