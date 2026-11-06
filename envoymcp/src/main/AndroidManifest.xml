@@ -164,6 +164,16 @@
             android:taskAffinity="com.rabi.envoymcp.quickapproval"
             android:theme="@style/Theme.Rabi.Transparent" />
 
+        <!-- Claude のコネクターをつなぐ前に、指紋などで本人に聞く (透明で、Android の本人確認だけを出す) -->
+        <activity
+            android:name="com.rabi.envoymcp.ui.approval.ConnectApprovalActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity="com.rabi.envoymcp.connectapproval"
+            android:theme="@style/Theme.Rabi.Transparent" />
+
         <service
             android:name="com.rabi.envoymcp.McpService"
             android:exported="false"

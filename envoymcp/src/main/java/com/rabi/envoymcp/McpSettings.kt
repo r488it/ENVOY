@@ -47,6 +47,16 @@ class McpSettings(context: Context) {
         get() = p.getString("tunnel_id", "") ?: ""
         set(v) = p.edit { putString("tunnel_id", v) }
 
+    /** 外 (Claude のコネクターなど) からつなぐトンネル (ngrok) を動かすか (本人が設定でオンにしたときだけ。MCP サーバーが動いているときだけ動く) */
+    var publicTunnelEnabled: Boolean
+        get() = p.getBoolean("public_tunnel_enabled", false)
+        set(v) = p.edit { putBoolean("public_tunnel_enabled", v) }
+
+    /** 外からつなぐときの名前 (ngrok の決まったドメイン。例: xxx.ngrok-free.app。https:// は付けない)。秘密ではない */
+    var publicDomain: String
+        get() = p.getString("public_domain", "") ?: ""
+        set(v) = p.edit { putString("public_domain", v.trim().removePrefix("https://").removePrefix("http://").trimEnd('/').lowercase()) }
+
     /**
      * 確定 (送信・投稿など) の前に、指紋などの本人確認をするか (最初はオン)。
      * 承認画面を出すか (approvalScreen) と組み合わせる

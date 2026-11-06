@@ -35,6 +35,7 @@ import com.rabi.envoymcp.mcp.ActivityLog
 import com.rabi.envoymcp.mcp.Agents
 import com.rabi.envoymcp.mcp.McpServer
 import com.rabi.envoymcp.mcp.McpTools
+import com.rabi.envoymcp.mcp.OAuthServer
 import com.rabi.envoymcp.mcp.ScreenVision
 import com.rabi.envoymcp.mcp.ToolLog
 import com.rabi.envoymcp.mcp.TunnelClient
@@ -53,6 +54,7 @@ import com.rabi.envoymcp.safety.ApprovalManager
 import com.rabi.envoymcp.safety.CommitFlow
 import com.rabi.envoymcp.safety.DuplicateGuard
 import com.rabi.envoymcp.ui.approval.ApprovalCoordinator
+import com.rabi.envoymcp.ui.approval.ConnectApproval
 import com.rabi.envoymcp.ui.approval.QuickApprovalActivity
 import com.rabi.envoymcp.ui.avatar.AvatarStyle
 import com.rabi.envoymcp.ui.overlay.OperationOverlay
@@ -150,8 +152,13 @@ class McpGraph(val context: Context) {
     /** エージェント (合言葉ごとの呼び手) と、その権限。本体の ChatGPT は設定の合言葉 */
     val agents = Agents(Agents.Prefs(context))
     val tools = McpTools(this)
+    /** Claude のコネクターをつなぐ前に、指紋などで本人に聞く */
+    val connectApproval = ConnectApproval(context)
+    /** 外 (Claude のコネクター) からつなぐときの OAuth (外のトンネルがオンで、外の名前があるときだけ受ける) */
+    val oauth = OAuthServer(domain = { if (settings.publicTunnelEnabled) settings.publicDomain else "" }, agents = agents,
+        store = OAuthServer.Prefs(context), approve = { connectApproval.ask() }, activity = activity)
     val server = McpServer(tools, port = { settings.port }, token = { settings.token }, log = log, agents = agents,
-        unlimited = { settings.devNoAgentLimits })
+        unlimited = { settings.devNoAgentLimits }, oauth = oauth)
     /** Sign in with ChatGPT (画面の画像を AI に読ませるのに使う。API キーは要らない) */
     val auth = ChatGptAuth(context).also { it.restore() }
     /** 画面の理解で Claude を使うときの、本人の Anthropic の API キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
@@ -161,6 +168,8 @@ class McpGraph(val context: Context) {
     /** スマホの中の tunnel-client と、その実行用キー (Android Keystore で暗号化して保存。画面・記録には出さない) */
     val tunnel = TunnelClient(context)
     val tunnelKey = SecureStore(context, "tunnel_runtime_key")
+    /** 外からつなぐトンネル (ngrok) の認証トークン (Android Keystore で暗号化して保存。画面・記録には出さない) */
+    val ngrokToken = SecureStore(context, "ngrok_authtoken")
 
     /** ChatGPT の音声モードの真ん中に重ねるリゲル */
     val voiceStage = VoiceStage(this)

@@ -13,6 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -27,9 +28,12 @@ import java.security.MessageDigest
  * スマホの中 (127.0.0.1) だけで受け付ける MCP サーバー (Streamable HTTP の POST だけ。サーバーからの SSE は出さない)。
  * - 同じ端末の他のアプリ・ブラウザから勝手に使われないように、合言葉 (Authorization: Bearer か、URL の /mcp/<合言葉>) を確かめ、
  *   Host が 127.0.0.1 / localhost 以外のもの、ブラウザから来たもの (Origin あり) は断る
- * - 外から届くのは、tunnel-client (OpenAI の Secure MCP Tunnel) が 127.0.0.1 へ取り次いだものだけ (このサーバーは外に口を開けない)
+ * - 外から届くのは、トンネル (OpenAI の Secure MCP Tunnel の tunnel-client・ngrok) が 127.0.0.1 へ取り次いだものだけ (このサーバーは外に口を開けない)
  * - 合言葉でエージェントを見分ける (本体の ChatGPT は token の合言葉、足したエージェントは自分の合言葉)。
  *   止めている・期限が切れたエージェントは断り、使える道具はエージェントの権限で絞る (McpProtocol)
+ * - Host が外の名前 (oauth の外のドメイン) のものは、外 (Claude のコネクター) から届いたものとして別に扱う:
+ *   OAuth の入口 (OAuthServer) に答え、/mcp は OAuth で渡した合言葉 (Authorization: Bearer) だけを受ける。
+ *   URL の合言葉・本体の合言葉・設定で足したエージェントの合言葉は、外からは使えない
  */
 class McpServer(
     tools: ToolHost,
@@ -41,6 +45,8 @@ class McpServer(
     /** 開発モード: 止めていないエージェントには、権限の制限 (まとまり・読むだけ・期限) をかけない */
     private val unlimited: () -> Boolean = { false },
     private val now: () -> Long = System::currentTimeMillis,
+    /** 外 (Claude のコネクター) からつなぐときの OAuth (省略すると、外の名前の Host は断る) */
+    private val oauth: OAuthServer? = null,
 ) {
     sealed class State(val label: String) {
         data object Stopped : State("止まっています")
@@ -107,19 +113,45 @@ class McpServer(
 
     /** 1 つの HTTP の依頼に答える (試験から直接呼ぶ) */
     internal suspend fun respond(req: HttpRequest): HttpResponse {
-        val host = req.header("host").orEmpty().let { if (it.startsWith("[")) it.substringBefore("]") + "]" else it.substringBefore(":") }
-        if (host.lowercase() !in LOCAL_HOSTS) return refuse(403, "Host が 127.0.0.1 ではありません")
-        if (req.header("origin") != null) return refuse(403, "ブラウザ (Origin あり) からの接続です")
+        val host = req.header("host").orEmpty().let { if (it.startsWith("[")) it.substringBefore("]") + "]" else it.substringBefore(":") }.lowercase()
         val path = req.path.substringBefore('?')
+        if (oauth != null && host == oauth.host()) return respondOutside(req, path, oauth)
+        if (host !in LOCAL_HOSTS) return refuse(403, "Host が 127.0.0.1 ではありません")
+        if (req.header("origin") != null) return refuse(403, "ブラウザ (Origin あり) からの接続です")
         val pathToken = when {
             path == "/mcp" || path == "/mcp/" -> null
             path.startsWith("/mcp/") -> path.removePrefix("/mcp/").trimEnd('/')
             else -> return HttpResponse.text(404, "not found")
         }
-        val bearer = req.header("authorization")?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
+        val bearer = bearer(req)
         val given = listOfNotNull(pathToken, bearer)
         if (given.isEmpty()) return refuse(403, "合言葉がありません")
         val agent = find(given) ?: return refuse(403, "合言葉が違います")
+        return serveAgent(req, agent)
+    }
+
+    /**
+     * 外の名前で届いた依頼 (Claude のコネクター)。OAuth の入口に答え、/mcp は OAuth で渡した合言葉 (Bearer) だけを受ける。
+     * 合言葉が無い・違うときは 401 で、合言葉のもらい方 (WWW-Authenticate) を知らせる (無いときは、つなぐ最初の一歩なので記録しない)
+     */
+    private suspend fun respondOutside(req: HttpRequest, path: String, oauth: OAuthServer): HttpResponse {
+        oauth.handle(req, path)?.let { return it }
+        if (path != "/mcp" && !path.startsWith("/mcp/")) return HttpResponse.text(404, "not found")
+        if (req.header("origin") != null) return refuse(403, "ブラウザ (Origin あり) からの接続です")
+        if (path != "/mcp" && path != "/mcp/") return refuse(403, "外からは、合言葉の URL を使えません")
+        val bearer = bearer(req) ?: return oauth.unauthorized()
+        val agent = oauth.agentFor(bearer) ?: run {
+            log.add("接続を断った", false, "外からの合言葉が違います")
+            return oauth.unauthorized(invalid = true)
+        }
+        return serveAgent(req, agent)
+    }
+
+    private fun bearer(req: HttpRequest): String? =
+        req.header("authorization")?.takeIf { it.startsWith("Bearer ", ignoreCase = true) }?.substring(7)?.trim()
+
+    /** 見分けたエージェントの依頼に答える (止めている・期限切れは断る。POST だけ) */
+    private suspend fun serveAgent(req: HttpRequest, agent: Agent): HttpResponse {
         when (AgentPolicy.status(agent, now(), unlimited())) {
             AgentPolicy.Status.OFF -> return refuse(403, "エージェント「${agent.name}」は止めています")
             AgentPolicy.Status.EXPIRED -> return refuse(403, "エージェント「${agent.name}」は期限が切れています")
@@ -207,8 +239,13 @@ internal class HttpResponse(
     val extra: List<Pair<String, String>> = emptyList(),
 ) {
     companion object {
-        fun text(status: Int, s: String) = HttpResponse(status, REASONS[status] ?: "Error", "text/plain; charset=utf-8", s.toByteArray())
-        private val REASONS = mapOf(403 to "Forbidden", 404 to "Not Found", 413 to "Payload Too Large", 500 to "Internal Server Error")
+        fun text(status: Int, s: String) = HttpResponse(status, reason(status), "text/plain; charset=utf-8", s.toByteArray())
+        fun json(status: Int, o: JSONObject) = HttpResponse(status, reason(status), "application/json", o.toString().toByteArray())
+        fun reason(status: Int) = REASONS[status] ?: "Error"
+        private val REASONS = mapOf(
+            200 to "OK", 201 to "Created", 302 to "Found", 400 to "Bad Request", 401 to "Unauthorized", 403 to "Forbidden", 404 to "Not Found",
+            405 to "Method Not Allowed", 413 to "Payload Too Large", 429 to "Too Many Requests", 500 to "Internal Server Error",
+        )
     }
 }
 

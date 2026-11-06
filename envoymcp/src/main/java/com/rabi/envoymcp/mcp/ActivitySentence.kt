@@ -115,6 +115,10 @@ internal object ActivitySentence {
     fun incoming(from: String, answered: Boolean, risk: String = ""): String =
         "リゲルが${person(from)}からの電話に代わりに" + (if (answered) "出た" else "出ようとした") + if (risk.isNotBlank()) "（$risk）" else ""
 
+    /** Claude のコネクターをつないだ・つながなかった (why は「許可しなかった」「時間切れ」など。無ければ空) */
+    fun connector(done: Boolean, why: String = ""): String =
+        "Claude のコネクターを" + (if (done) "つないだ" else "つながなかった") + if (why.isNotBlank()) "（$why）" else ""
+
     /** どうなったか: 本人が承認しなかった → refused、うまくいった → ok、それ以外 → failed (止めた・断ったは呼ぶ側が決める) */
     fun outcome(r: ToolResult): String = when {
         approved(r) == false -> ActivityLog.REFUSED
