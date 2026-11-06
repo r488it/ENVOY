@@ -1,5 +1,6 @@
 package com.rabi.envoymcp.mcp
 
+import com.rabi.envoymcp.core.Provenance
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -97,6 +98,14 @@ class OAuthServerTest {
         val id = clientId()
         val r = json(exchange(id, code(id)))
         return Triple(id, r.getString("access_token"), r.getString("refresh_token"))
+    }
+
+    /** 外からつなぐときの公開の説明に、ライセンスと出どころの印が出る */
+    @Test fun resourceMetadataCarriesProvenance() = runTest {
+        val m = json(server.respond(req("GET", "/.well-known/oauth-protected-resource"))).getJSONObject("envoy_provenance")
+        assertEquals(Provenance.LICENSE, m.getString("license"))
+        assertEquals(Provenance.ID, m.getString("id"))
+        assertEquals(Provenance.NOTICE, m.getString("notice"))
     }
 
     // ---------------------------------------------------------------- Host の振り分け

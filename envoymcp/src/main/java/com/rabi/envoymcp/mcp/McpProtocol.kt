@@ -1,5 +1,6 @@
 package com.rabi.envoymcp.mcp
 
+import com.rabi.envoymcp.core.Provenance
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -134,6 +135,8 @@ class McpProtocol(
             .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", false)))
             .put("serverInfo", JSONObject().put("name", "envoy-mcp").put("title", "ENVOY MCP").put("version", version))
             .put("instructions", extraInstructions().let { if (it.isBlank()) instructions else "$instructions $it" })
+            // ライセンス・著作権の表示・出どころ (AI の動きには使わない)
+            .put("_meta", Provenance.meta())
     }
 
     private fun result(id: Any?, r: JSONObject) = JSONObject().put("jsonrpc", "2.0").put("id", id ?: JSONObject.NULL).put("result", r)

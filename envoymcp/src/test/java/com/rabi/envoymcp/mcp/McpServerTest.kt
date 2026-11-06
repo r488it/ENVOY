@@ -1,5 +1,6 @@
 package com.rabi.envoymcp.mcp
 
+import com.rabi.envoymcp.core.Provenance
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
@@ -56,6 +57,15 @@ class McpServerTest {
         assertEquals(McpServer.INSTRUCTIONS, instructions())
         extra = "音声で話しているときは、黙って道具を呼んでください。"
         assertEquals(McpServer.INSTRUCTIONS + " " + extra, instructions())
+    }
+
+    /** 最初の返事に、ライセンス・著作権の表示・出どころ・作品の番号を出す (_meta) */
+    @Test fun initializeCarriesProvenance() = runTest {
+        val meta = JSONObject(String(server.respond(req(rpc("initialize", JSONObject()))).body)).getJSONObject("result").getJSONObject("_meta")
+        assertEquals(Provenance.LICENSE, meta.getString("license"))
+        assertEquals(Provenance.NOTICE, meta.getString("notice"))
+        assertEquals(Provenance.SOURCE, meta.getString("source"))
+        assertEquals(Provenance.ID, meta.getString("id"))
     }
 
     @Test fun unknownVersionGetsLatest() = runTest {

@@ -1,5 +1,6 @@
 package com.rabi.envoymcp.ui.settings
 
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -66,6 +67,7 @@ internal enum class Section(val title: String, val icon: ImageVector) {
     PHOTO("写真", Icons.Rounded.PhotoLibrary),
     MONITOR("モニター", Icons.Rounded.DesktopWindows),
     DEV("開発・試験", Icons.Rounded.Code),
+    ABOUT("このアプリについて", Icons.Rounded.Info),
 }
 
 /** 一覧から飛ぶ先のカードの見出し (カードの見出しと同じ文字にする) */

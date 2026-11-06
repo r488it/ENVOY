@@ -1,5 +1,6 @@
 package com.rabi.envoymcp.mcp
 
+import com.rabi.envoymcp.core.Provenance
 import android.content.Context
 import androidx.core.content.edit
 import kotlinx.coroutines.CompletableDeferred
@@ -136,6 +137,7 @@ class OAuthServer(
         .put("authorization_servers", JSONArray().put(base))
         .put("bearer_methods_supported", JSONArray().put("header"))
         .put("resource_name", "ENVOY MCP")
+        .put("envoy_provenance", Provenance.meta())
 
     private fun serverMetadata(base: String) = JSONObject()
         .put("issuer", base)
