@@ -215,12 +215,14 @@ class McpTools(private val g: McpGraph) : ToolHost {
             params = props("which" to enumOf("開く画面", "quick_settings", "notifications", "close")), required = listOf("which")) { operateTools.openPanel(it) },
         Tool("tap", "タップする",
             "画面の部品を 1 回タップします。element_id (部品の一覧の番号)・text (部品の文字)・visual_id (look_at_screen の番号) のどれかで指定します。座標は直接指定できません。" +
+                "明るさ・音量などのつまみ (スライダー。cls が SeekBar など) は、position で押す横の位置を指定でき、つまみはその位置まで動きます (0 が左端、1 が右端。いちばん明るく・大きくするなら 1)。" +
                 "visual_id で部品の一覧に無いものを押すとき、確定・設定の切り替えらしいものは押しません (利用者に押してもらってください)。" +
                 "送信・投稿・購入・削除・発信らしいボタンや設定のスイッチは、スマホの承認画面や指紋などで利用者が承認してから押します (承認を待つので時間がかかります。利用者が設定で承認をオフにしていれば、承認なしで押します。そのときは押す前に利用者に声で確かめてください)。" +
                 "結果が unknown のときは、二重にならないよう、同じ確定を繰り返さないでください。",
             act = true, caption = "画面を操作しています", timeoutMs = APPROVAL_TIMEOUT_MS,
             params = props("element_id" to int("部品の一覧の番号"), "text" to str("押す部品の文字か説明 (element_id が無いとき)"),
-                "visual_id" to str("look_at_screen が返した番号 (v1 など)"))) { operateTools.tap(it) },
+                "visual_id" to str("look_at_screen が返した番号 (v1 など)"),
+                "position" to num("つまみ (スライダー) を押す横の位置 (0〜1。0 が左端、1 が右端)。つまみにだけ使えます"))) { operateTools.tap(it) },
         // 押さずに指して教える: 操作ではないので、縁の光・字幕・操作中の顔は出さない (quiet)
         Tool("point_at", "押す場所を指して教える",
             "画面の部品を、押さずに指して見せます (やり方を教える)。利用者が「やり方を教えて」「自分でやってみたい」「どこを押すの」と言ったときは、" +

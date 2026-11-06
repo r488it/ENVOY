@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /** 画面を操作する道具: クイック設定・通知、タップ (確定は承認のあと)、指さし (押さずに教える)、文字の入力、スクロール、戻る・ホーム、キー、待つ */
 internal class OperateTools(st: ToolState) : ToolGroup(st) {
@@ -91,6 +92,7 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         // 確定らしいボタン・設定のスイッチは、承認画面で本人が承認してから押す (部品と同じ流れ)。
         // 選んだ部品だけでなく、そこを押すと実際に押される部品 (押せる親) とその中身でも見る (名前の無い枠を選んでも、中の「送信」で分かる)
         CommitDetector.commitIn(cur, node)?.let { return commitTap(cur, it) }
+        if (a.has("position")) return sliderTap(cur, node, a.optDouble("position"))
         val r = g.device.tap(node.bounds.cx, node.bounds.cy)
         if (!r.ok) return fromAction(r, "押せませんでした")
         delay(600)
@@ -119,6 +121,28 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         lastVision = null
         val changed = after.ok && after.signature() != cur.signature()
         return ok("「${t.label}」の位置を押しました。" + if (changed) "画面が変わりました。" else "画面の文字は変わっていません (読み込み中かもしれません)。",
+            summary(after).put("screen_changed", changed))
+    }
+
+    /**
+     * つまみ (スライダー) の、横の位置 position (0 が左端、1 が右端) を押す。つまみは押した位置まで動く。
+     * 押すのは部品の真ん中ではないので、その位置で押されるものが確定・設定の切り替えでないかも確かめる。
+     * 部品 (save_part) には残さない (部品の手順は、部品の真ん中を押す形だけのため)
+     */
+    private suspend fun sliderTap(cur: Observation, node: UiNode, position: Double): ToolResult {
+        val name = node.label.ifBlank { "部品" }
+        if (!isSlider(node)) return failed("position は、つまみ (スライダー) にだけ使えます。「$name」はつまみではありません。", summary(cur))
+        if (position.isNaN()) return failed("position は 0〜1 の数で指定してください。")
+        val x = sliderX(node.bounds, position)
+        val y = node.bounds.cy
+        if (CommitDetector.commitAt(cur, x, y) != null) return failed("その位置には確定・設定の切り替えらしいものがあるので押しません。", summary(cur))
+        val r = g.device.tap(x, y)
+        if (!r.ok) return fromAction(r, "押せませんでした")
+        delay(600)
+        val after = g.device.observe()
+        val changed = after.ok && after.signature() != cur.signature()
+        return ok("「$name」のつまみの、左から ${(position.coerceIn(0.0, 1.0) * 100).roundToInt()}% の位置を押しました。" +
+            if (changed) "画面が変わりました。" else "画面の文字は変わっていません (読み込み中かもしれません)。",
             summary(after).put("screen_changed", changed))
     }
 
@@ -430,6 +454,17 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
     companion object {
         /** 位置で見つけたものと部品が「同じもの」とみなす重なり */
         private const val SAME_THING = 0.6f
+        /** つまみの端を押すとき、部品の枠の内側に入れる幅 (px。枠のちょうど上を押さない) */
+        private const val SLIDER_INSET = 4
+
+        /** つまみ (スライダー) か (Android の SeekBar・Compose などの Slider) */
+        internal fun isSlider(n: UiNode): Boolean = n.cls.endsWith("SeekBar") || n.cls.contains("Slider", ignoreCase = true)
+
+        /** つまみの横の位置 position (0〜1) を押す x。枠の内側に収める */
+        internal fun sliderX(b: Bounds, position: Double): Int {
+            val inset = minOf(SLIDER_INSET, (b.r - b.l) / 4)
+            return (b.l + inset + (b.r - b.l - 2 * inset) * position.coerceIn(0.0, 1.0)).roundToInt()
+        }
         /** 承認画面に出す内容 (入力欄の中身) の長さの上限 */
         private const val MAX_CONTENT = 600
         /** 指さしの長さ (秒。既定) と、その下限・上限 */
