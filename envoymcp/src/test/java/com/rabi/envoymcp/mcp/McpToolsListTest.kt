@@ -32,8 +32,20 @@ class McpToolsListTest {
             "share_call_record", "share_screenshot", "end_voice_chat", "search_photos", "show_photo", "share_photo", "open_panel", "tap", "point_at", "wait_for_user", "type_text",
             "scroll", "back", "home", "press_key", "wait",
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
-            "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "rigel_notify", "arm_stop",
+            "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "rigel_expression", "rigel_notify", "get_notices", "arm_stop",
             "run_part", "save_part", "delete_part",
         ), names)
+    }
+
+    /** get_notices は読むだけ (読むだけのエージェントにも出せる)。お知らせを預ける rigel_notify は読むだけではない */
+    @Test fun getNoticesIsReadOnly() {
+        val list = McpTools(graph()).list()
+        val byName = (0 until list.length()).map { list.getJSONObject(it) }.associateBy { it.getString("name") }
+        assertEquals(true, byName.getValue("get_notices").getJSONObject("annotations").getBoolean("readOnlyHint"))
+        assertEquals(false, byName.getValue("rigel_notify").getJSONObject("annotations").getBoolean("readOnlyHint"))
+        assertEquals(ToolGroups.of("rigel_notify"), ToolGroups.of("get_notices"))
+        val reader = Agent("a1", "テスト", token = "t", readOnly = true, groups = setOf(ToolGroups.of("get_notices")))
+        assertEquals(true, AgentPolicy.allows(reader, "get_notices", readOnly = true, now = 0L))
+        assertEquals(false, AgentPolicy.allows(reader, "rigel_notify", readOnly = false, now = 0L))
     }
 }

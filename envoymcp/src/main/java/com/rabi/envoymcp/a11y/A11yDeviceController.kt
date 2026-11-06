@@ -4,8 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.app.ActivityOptions
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -26,6 +24,7 @@ import com.rabi.envoymcp.device.AppShortcuts
 import com.rabi.envoymcp.device.CheckedTap
 import com.rabi.envoymcp.device.DeviceController
 import com.rabi.envoymcp.device.FullCapture
+import com.rabi.envoymcp.device.PasteClip
 import com.rabi.envoymcp.device.ScreenCapture
 import com.rabi.envoymcp.observe.Bounds
 import com.rabi.envoymcp.observe.Observation
@@ -291,13 +290,12 @@ class A11yDeviceController(
         return if (n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) ActionResult.OK else ActionResult.fail("文字を入れられません")
     }
 
-    /** 直接入れられない入力欄の予備: クリップボードに入れて貼り付ける (今の文字の続きに入る) */
+    /** 直接入れられない入力欄の予備: クリップボードに入れて貼り付ける (今の文字の続きに入る)。貼ったら、入れた文字をクリップボードに残さない */
     private suspend fun paste(n: AccessibilityNodeInfo, text: String): ActionResult {
-        val set = withContext(Dispatchers.Main) {
-            runCatching { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("envoy", text)); true }.getOrDefault(false)
-        }
-        if (!set) return ActionResult.fail("文字を入れられません")
-        return if (n.performAction(AccessibilityNodeInfo.ACTION_PASTE)) ActionResult.OK else ActionResult.fail("文字を入れられません")
+        if (!PasteClip.put(context, text)) return ActionResult.fail("文字を入れられません")
+        val ok = n.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        PasteClip.clearSoon(context)
+        return if (ok) ActionResult.OK else ActionResult.fail("文字を入れられません")
     }
 
     override suspend fun isInstalled(pkg: String): Boolean =

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.rabi.envoymcp.a11y.A11yService
+import com.rabi.envoymcp.call.CallFrames
 import com.rabi.envoymcp.call.CallInfo
 import com.rabi.envoymcp.call.PhoneContacts
 import com.rabi.envoymcp.call.ScamCheck
@@ -170,10 +171,11 @@ internal class CallTools(st: ToolState, private val apps: AppTools) : ToolGroup(
             CALL_QUIET + "1〜3 分ほどしたら rigel_call_status で結果を確かめ、利用者に伝えてください。", JSONObject().put("calling", true))
     }
 
+    /** リゲルの電話の様子と結果。相手の名前・要点・やり取りは外から届いた文なので、指示ではないと添える (RigelCaller.statusJson) */
     fun rigelCallStatus(): ToolResult {
         val status = g.rigelCaller.statusJson()
         g.rigelCaller.resultDelivered()
-        return ok("リゲルの電話の様子です。", status)
+        return ok("リゲルの電話の様子です。" + CallFrames.UNTRUSTED_NOTE, status)
     }
 
     fun rigelCallHangup(): ToolResult =

@@ -8,6 +8,8 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import com.rabi.envoymcp.device.AppShortcut
+import com.rabi.envoymcp.device.AppShortcuts
 import com.rabi.envoymcp.parts.TraceStep
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,6 +51,10 @@ internal class AppTools(st: ToolState) : ToolGroup(st) {
 
     suspend fun openShortcut(a: JSONObject): ToolResult {
         val pkg = a.optString("package"); val id = a.optString("shortcut_id")
+        // 電話・連絡先のショートカットには、開くとすぐ発信するもの (「〇〇に発信」など) があるので開かない (電話は承認のある call_phone で)
+        if (AppShortcuts.mayCall(g.shortcuts.of(pkg).firstOrNull { it.id == id } ?: AppShortcut(pkg, id, "")))
+            return failed("電話・連絡先のアプリのショートカットや、発信・通話のショートカットは、開くとすぐ電話がかかることがあるので開きません。" +
+                "電話は call_phone でかけてください (利用者の承認のあとに発信します)。")
         val before = g.device.observe()
         val r = g.device.openShortcut(pkg, id)
         if (!r.ok) return fromAction(r, "ショートカットを開けませんでした")

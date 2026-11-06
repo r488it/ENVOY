@@ -1,14 +1,11 @@
 package com.rabi.envoymcp.device
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.core.graphics.scale
-import com.rabi.envoymcp.core.RabiLog
 import com.rabi.envoymcp.device.adb.AdbConnector
 import com.rabi.envoymcp.device.adb.AdbLostException
 import com.rabi.envoymcp.device.adb.ExecResult
@@ -23,7 +20,8 @@ import java.io.ByteArrayOutputStream
 /**
  * ADB による端末操作。
  * - 画面: uiautomator dump (UI 階層) + 前面のアクティビティ。画像は screencap (取る瞬間だけオーバーレイを隠し、縮小して JPEG)
- * - 文字入力: ASCII は input text、日本語などはクリップボードに入れて貼り付け (KEYCODE_PASTE)。入ったかは呼ぶ側が画面で確かめる
+ * - 文字入力: ASCII は input text、日本語などはクリップボードに入れて貼り付け (KEYCODE_PASTE。貼ったあとクリップボードを空にする: PasteClip)。
+ *   入ったかは呼ぶ側が画面で確かめる
  * - 計測: 操作ごとの所要時間を残す (診断画面)
  */
 class AdbDeviceController(
@@ -46,7 +44,8 @@ class AdbDeviceController(
         return try {
             val size = screen ?: wmSize().also { screen = it }
             val r = adb.exec(
-                "uiautomator dump $DUMP >/dev/null 2>&1; cat $DUMP 2>/dev/null; echo; echo $MARK; " +
+                // 読んだらすぐ消す (画面の文字を端末のファイルに残さない)
+                "uiautomator dump $DUMP >/dev/null 2>&1; cat $DUMP 2>/dev/null; rm -f $DUMP; echo; echo $MARK; " +
                     "dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity' | head -n 2", 20_000,
             )
             val text = r.text
@@ -118,6 +117,15 @@ class AdbDeviceController(
 
     override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, ms: Int) = passThroughWhile { run("input swipe $x1 $y1 $x2 $y2 $ms") { r -> if (r.ok) ActionResult.OK else ActionResult.fail(r.err.take(80)) } }
 
+    /**
+     * キー (KEYCODE_…) を display の画面に 1 つ送る (press_key)。送る間は、タップと同じく自分の押しとして扱う
+     * (承認画面などが本人の押しと取り違えないように)
+     */
+    suspend fun key(display: Int, code: String): ActionResult {
+        if (!code.matches(Regex("KEYCODE_[A-Z0-9_]+"))) return ActionResult.fail("キーの名前が不正")
+        return passThroughWhile { run("input -d $display keyevent $code") { r -> if (r.ok) ActionResult.OK else ActionResult.fail(r.err.take(80)) } }
+    }
+
     override suspend fun back() = run("input keyevent 4") { if (it.ok) ActionResult.OK else ActionResult.fail("back") }
 
     override suspend fun home() = run("input keyevent 3") { if (it.ok) ActionResult.OK else ActionResult.fail("home") }
@@ -129,18 +137,11 @@ class AdbDeviceController(
             inputMethod = "input text"
             return run("input text ${text.replace(" ", "%s")}") { if (it.ok) ActionResult.OK else ActionResult.fail("input text") }
         }
-        // 日本語など: クリップボード経由で貼り付ける (input text は ASCII 以外を扱えない)
+        // 日本語など: クリップボード経由で貼り付ける (input text は ASCII 以外を扱えない)。貼ったら、入れた文字をクリップボードに残さない
         inputMethod = "クリップボード + 貼り付け"
-        val set = withContext(Dispatchers.Main) {
-            runCatching {
-                val cm = context.getSystemService(ClipboardManager::class.java)
-                cm.setPrimaryClip(ClipData.newPlainText("rabi", text))
-                true
-            }.getOrElse { RabiLog.w("device", "clipboard failed ${it.javaClass.simpleName}"); false }
-        }
-        if (!set) return ActionResult.fail("クリップボードに入れられません")
+        if (!PasteClip.put(context, text)) return ActionResult.fail("クリップボードに入れられません")
         delay(150)
-        return run("input keyevent 279") { if (it.ok) ActionResult.OK else ActionResult.fail("paste") }
+        return run("input keyevent 279") { if (it.ok) ActionResult.OK else ActionResult.fail("paste") }.also { PasteClip.clearSoon(context) }
     }
 
     override suspend fun clearFocusedField(): ActionResult {

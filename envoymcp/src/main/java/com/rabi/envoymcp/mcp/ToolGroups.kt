@@ -9,7 +9,7 @@ object ToolGroups {
         "部品 (覚えた手順)" to listOf("list_parts", "run_part", "save_part", "delete_part"),
         "写真" to listOf("search_photos", "show_photo", "share_photo"),
         "電話" to listOf("call_phone", "rigel_call", "rigel_call_status", "rigel_call_hangup", "rigel_incoming", "share_call_record"),
-        "音声モード・表情・お知らせ" to listOf("end_voice_chat", "rigel_expression", "rigel_notify"),
+        "音声モード・表情・お知らせ" to listOf("end_voice_chat", "rigel_expression", "rigel_notify", "get_notices"),
         "AgentARM (スマホを載せる腕)" to listOf(
             "arm_portrait", "arm_landscape", "arm_look_at_me", "arm_follow_me", "arm_stop_following", "arm_record_video",
             "arm_switch_camera", "arm_stop_recording", "arm_move", "arm_motion", "arm_dance", "arm_stop",

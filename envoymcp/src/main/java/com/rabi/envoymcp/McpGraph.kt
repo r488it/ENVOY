@@ -466,7 +466,9 @@ class McpGraph(val context: Context) {
 
     /**
      * リゲルをタップした: 道具が動いている間は止める。何もしていなければ、止めた状態を解いて ChatGPT を開く。
-     * 本人にまだ伝えていないお知らせ (notices。電話のあとのこと・定期の依頼の結果) があれば、最初の一言で送って伝えてもらう (送れたものだけ消す)
+     * 本人にまだ伝えていないお知らせ (notices。電話のあとのこと・定期の依頼の結果) があれば、最初の一言で「N 件ある。get_notices で読んで」と頼む
+     * (最初の一言は決まった文と種類・時刻だけ。中身は get_notices で外から届いた文として渡す)。
+     * 送れたものに印を付け、get_notices で読まれたら消す
      */
     fun tapRigel(from: String) {
         if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser(from); return }
@@ -479,6 +481,18 @@ class McpGraph(val context: Context) {
             RabiLog.i("graph", "hand off ${notes.size} notices")
             voicePrimer.expectReport(handoff) { notices.remove(notes.map { it.id }) }
         } else voicePrimer.expect()
+        if (!openChatGptVoice()) { RabiLog.w("graph", "cannot open ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
+    }
+
+    /**
+     * デジタル アシスタントの受け口 (AssistActivity。電源ボタンの長押しなど) から開いた: 道具が動いている間は止める。
+     * 何もしていなければ ChatGPT の音声モードを開く (いつもの最初の一言だけ送る)。
+     * 受け口はほかのアプリからも開けるので、リゲルのタップと違い、お知らせの引き継ぎと、止めた状態を解くこと (clearStop) はしない
+     */
+    fun openVoiceFromAssist() {
+        if (state.value.mood == Mood.ACTING || currentJob?.isActive == true) { stopByUser("assist"); return }
+        voiceStage.expectVoice()
+        voicePrimer.expect()
         if (!openChatGptVoice()) { RabiLog.w("graph", "cannot open ChatGPT"); voiceStage.cancelExpect(); scope.launch { voicePrimer.stop() } }
     }
 
@@ -531,7 +545,8 @@ class McpGraph(val context: Context) {
     }
 
     /**
-     * リゲルの電話が終わった: ChatGPT の音声モードを開き直し、最初の一言で電話の結果を送って、本人に報告してもらう。
+     * リゲルの電話が終わった: ChatGPT の音声モードを開き直し、最初の一言 (report。決まった文と結果の種類だけ。CallFrames) を送って、
+     * rigel_call_status で結果を読んで本人に報告してもらう。
      * 電話が終わっても、しばらく端末は通話中のまま (音声モードが始まらない) なので、通話中が解けるのを待ってから開く (リゲルの覆いは出したまま)。
      * 開き直せなかったら (次の着信が鳴っている・ChatGPT を開けない) onSkip を呼ぶ (結果はお知らせに残してもらう)
      */

@@ -88,8 +88,9 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
             is Pick.Fail -> return p.r
         }
         if (node.bounds.area <= 0) return failed("その部品は画面に出ていません。")
-        // 確定らしいボタン・設定のスイッチは、承認画面で本人が承認してから押す (部品と同じ流れ)
-        if (CommitDetector.looksLikeCommit(node) || CommitDetector.togglesSetting(cur, node)) return commitTap(cur, node)
+        // 確定らしいボタン・設定のスイッチは、承認画面で本人が承認してから押す (部品と同じ流れ)。
+        // 選んだ部品だけでなく、そこを押すと実際に押される部品 (押せる親) とその中身でも見る (名前の無い枠を選んでも、中の「送信」で分かる)
+        CommitDetector.commitIn(cur, node)?.let { return commitTap(cur, it) }
         val r = g.device.tap(node.bounds.cx, node.bounds.cy)
         if (!r.ok) return fromAction(r, "押せませんでした")
         delay(600)
@@ -102,12 +103,14 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
 
     /**
      * 部品の一覧に無いもの (look_at_screen で見つけたもの) を位置で押す。確定・設定の切り替えらしいものは押さない
-     * (承認の流れは部品を前提にしていて、位置だけでは承認のあとに同じものを確かめられないため)。部品 (save_part) には残さない
+     * (承認の流れは部品を前提にしていて、位置だけでは承認のあとに同じものを確かめられないため)。部品 (save_part) には残さない。
+     * AI が付けた名前のほかに、その位置で押される部品 (読めるもの) も確かめる
      */
     private suspend fun visualTap(cur: Observation, t: ScreenVision.Target): ToolResult {
         val probe = UiNode(-1, t.label, "", "", if (t.kind == "switch") "android.widget.Switch" else "android.view.View", cur.pkg.orEmpty(), t.bounds,
             clickable = true, enabled = true, focused = false, scrollable = false, checked = false, password = false, hint = "", depth = 0)
-        if (t.commit || t.kind == "switch" || CommitDetector.looksLikeCommit(probe) || CommitDetector.togglesSetting(cur, probe))
+        if (t.commit || t.kind == "switch" || CommitDetector.looksLikeCommit(probe) || CommitDetector.togglesSetting(cur, probe) ||
+            CommitDetector.commitAt(cur, t.bounds.cx, t.bounds.cy) != null)
             return failed("「${t.label}」は確定・設定の切り替えらしく、画面の部品として読めないので押しません。利用者に押してもらってください。", summary(cur))
         val r = g.device.tap(t.bounds.cx, t.bounds.cy)
         if (!r.ok) return fromAction(r, "押せませんでした")
@@ -320,6 +323,9 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
             target = before.nodes.firstOrNull { it.focused && it.editable }
         }
         if (target?.password == true) return failed("パスワード欄には入れません。")
+        // 番号の部品は入れる前に押すので、入力欄でない確定らしい部品 (送信のボタンなど) は押さない (承認を通らずに押されないように)
+        if (target != null && a.has("element_id") && !target.editable && CommitDetector.commitIn(before, target) != null)
+            return failed("その番号の部品は入力欄ではなく、押すと確定 (送信など) になりそうなので押していません。入力欄の番号を選んでください。", summary(before))
         if (target != null && a.has("element_id")) {
             val tr = g.device.tap(target.bounds.cx, target.bounds.cy)
             if (!tr.ok) return fromAction(tr, "入力欄を押せませんでした")
@@ -343,7 +349,7 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         if (field == null || !SearchField.isSearch(field.resId, field.hint, field.desc, field.cls))
             return ok("「${text.take(40)}」を入れました。検索欄ではないので、実行 (Enter) はしていません。送信のボタンなどは tap で押してください。", summary(cur))
         val done = A11yService.instance?.imeEnterOnFocused() == true ||
-            (g.adb.isConnected && runCatching { g.adb.exec("input -d ${g.monitorStage.target} keyevent KEYCODE_ENTER", 5_000) }.isSuccess)
+            (g.adb.isConnected && g.adbDevice.key(g.monitorStage.target, "KEYCODE_ENTER").ok)
         if (!done) return failed("「${text.take(40)}」は入れましたが、検索を実行できませんでした。検索のボタンを tap で押してください。", summary(cur))
         delay(800)
         val after = g.device.observe()
@@ -380,23 +386,27 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
 
     /**
      * キーを押す (モニターの YouTube を f で全画面にするなど)。操作先の画面 (モニターにつながっていればモニター) に、
-     * ADB の input keyevent で送る (ユーザー補助では文字以外のキーを送れない)。Enter は送信になることがあるので送らない
+     * ADB の input keyevent で送る (ユーザー補助では文字以外のキーを送れない)。
+     * 選ばれているボタンを押してしまうキー (Space・Enter・決定など) は送らない (PressKey)。ENVOY MCP 自身の画面には送らない。
+     * 送る間は自分の押しとして扱い (承認画面が本人の押しと取り違えないように)、承認を待っている間は送るのを止める
      */
     suspend fun pressKey(a: JSONObject): ToolResult {
         val raw = a.optString("key").trim().lowercase()
-        if (raw in setOf("enter", "return", "numpad_enter", "\n")) return failed("Enter は送信になることがあるので押しません。確定のボタンは tap で押してください (承認のあとに押します)。")
-        val code = KEYS[raw] ?: when {
-            raw.length == 1 && raw[0] in 'a'..'z' -> "KEYCODE_${raw.uppercase()}"
-            raw.length == 1 && raw[0] in '0'..'9' -> "KEYCODE_$raw"
-            raw.matches(Regex("f([1-9]|1[0-2])")) -> "KEYCODE_${raw.uppercase()}"
-            else -> null
-        } ?: return failed("押せないキーです ($raw)。英字・数字 1 文字か、space・escape・矢印 (up/down/left/right) などを指定してください。")
+        val code = when (val k = PressKey.resolve(raw)) {
+            is PressKey.Code -> k.code
+            is PressKey.Refused -> return failed(k.why)
+        }
         if (!g.adb.isConnected && !(g.adb.paired && g.adb.probeIfIdle())) return failed("キーを送るには、端末の操作の接続 (ADB) が要ります。")
+        val cur = g.device.observe()
+        if (!cur.ok) return failed("画面を読み取れません (${cur.error})")
+        ownScreen(cur)?.let { return it }
         val times = a.optInt("times", 1).coerceIn(1, 10)
         val display = g.monitorStage.target
         repeat(times) {
-            val r = runCatching { g.adb.exec("input -d $display keyevent $code", 5_000) }
-            if (r.isFailure) return failed("キーを送れませんでした (${r.exceptionOrNull()?.javaClass?.simpleName})。")
+            // 承認を待っている間は送らない (承認画面にキーが届かないように。続けて送っている途中でも止める)
+            if (g.approvals.current.value != null) return failed("スマホで承認を待っているので、キーを送るのを止めました。承認が終わってから頼み直してください。")
+            val r = g.adbDevice.key(display, code)
+            if (!r.ok) return fromAction(r, "キーを送れませんでした")
         }
         delay(400)
         val after = g.device.observe()
@@ -439,14 +449,44 @@ internal class OperateTools(st: ToolState) : ToolGroup(st) {
         private const val POINT_BASE_TRIES = 3
         /** 指さしの返事に出す部品の名前の長さの上限 */
         private const val POINT_NAME_MAX = 40
-        /** press_key で押せる名前つきのキー (Enter は送信になるので入れない) */
-        private val KEYS = mapOf(
-            "space" to "KEYCODE_SPACE", "escape" to "KEYCODE_ESCAPE", "esc" to "KEYCODE_ESCAPE", "tab" to "KEYCODE_TAB",
-            "backspace" to "KEYCODE_DEL", "delete" to "KEYCODE_FORWARD_DEL",
-            "up" to "KEYCODE_DPAD_UP", "down" to "KEYCODE_DPAD_DOWN", "left" to "KEYCODE_DPAD_LEFT", "right" to "KEYCODE_DPAD_RIGHT",
-            "page_up" to "KEYCODE_PAGE_UP", "page_down" to "KEYCODE_PAGE_DOWN", "move_home" to "KEYCODE_MOVE_HOME", "move_end" to "KEYCODE_MOVE_END",
-            "play_pause" to "KEYCODE_MEDIA_PLAY_PAUSE", "next" to "KEYCODE_MEDIA_NEXT", "previous" to "KEYCODE_MEDIA_PREVIOUS",
-            "volume_up" to "KEYCODE_VOLUME_UP", "volume_down" to "KEYCODE_VOLUME_DOWN", "mute" to "KEYCODE_VOLUME_MUTE",
-        )
+    }
+}
+
+/**
+ * press_key のキーの名前から、送るキー (KEYCODE_…) を決める。
+ * Android の画面や Web は、選ばれているボタン・チェックを Space・Enter・決定 (DPAD_CENTER)・ゲームパッドのボタンで押すので、
+ * これらは断る (Tab や矢印で送信のボタンを選んで押せば、承認を通らずに送れてしまうため)。動画のキー (k・f・メディアキー・音量) は送れる
+ */
+internal object PressKey {
+    sealed interface Choice
+    class Code(val code: String) : Choice
+    class Refused(val why: String) : Choice
+
+    /** 選ばれている部品を押してしまうキー */
+    private val CONFIRM = setOf("space", "spacebar", "enter", "return", "numpad_enter", "dpad_center", "center", "select", "ok")
+
+    /** 押せる名前つきのキー */
+    private val KEYS = mapOf(
+        "escape" to "KEYCODE_ESCAPE", "esc" to "KEYCODE_ESCAPE", "tab" to "KEYCODE_TAB",
+        "backspace" to "KEYCODE_DEL", "delete" to "KEYCODE_FORWARD_DEL",
+        "up" to "KEYCODE_DPAD_UP", "down" to "KEYCODE_DPAD_DOWN", "left" to "KEYCODE_DPAD_LEFT", "right" to "KEYCODE_DPAD_RIGHT",
+        "page_up" to "KEYCODE_PAGE_UP", "page_down" to "KEYCODE_PAGE_DOWN", "move_home" to "KEYCODE_MOVE_HOME", "move_end" to "KEYCODE_MOVE_END",
+        "play_pause" to "KEYCODE_MEDIA_PLAY_PAUSE", "next" to "KEYCODE_MEDIA_NEXT", "previous" to "KEYCODE_MEDIA_PREVIOUS",
+        "volume_up" to "KEYCODE_VOLUME_UP", "volume_down" to "KEYCODE_VOLUME_DOWN", "mute" to "KEYCODE_VOLUME_MUTE",
+    )
+
+    /** raw はトリム・小文字にしたキーの名前 (KEYCODE_ の頭は付いていてもよい) */
+    fun resolve(raw: String): Choice {
+        val k = raw.removePrefix("keycode_")
+        if (k in CONFIRM || k.startsWith("button_"))
+            return Refused("「$raw」は、選ばれているボタンを押してしまう (送信・購入になることがある) ので押しません。" +
+                "動画の一時停止・再生は k か play_pause を使ってください。確定のボタンは tap で押してください (承認のあとに押します)。")
+        val code = KEYS[k] ?: when {
+            k.length == 1 && k[0] in 'a'..'z' -> "KEYCODE_${k.uppercase()}"
+            k.length == 1 && k[0] in '0'..'9' -> "KEYCODE_$k"
+            k.matches(Regex("f([1-9]|1[0-2])")) -> "KEYCODE_${k.uppercase()}"
+            else -> null
+        } ?: return Refused("押せないキーです ($raw)。英字・数字 1 文字か、escape・矢印 (up/down/left/right)・play_pause などを指定してください。")
+        return Code(code)
     }
 }

@@ -82,7 +82,8 @@
             </intent-filter>
         </activity>
 
-        <!-- デジタル アシスタント: 設定で ENVOY MCP を選ぶと、電源ボタンの長押しなどでリゲルのタップと同じく ChatGPT の音声モードを開く (画面は出さない) -->
+        <!-- デジタル アシスタント: 設定で ENVOY MCP を選ぶと、電源ボタンの長押しなどで ChatGPT の音声モードを開く (画面は出さない)。
+             Android が開けるよう公開している (ほかのアプリからも開ける) ので、お知らせの引き継ぎと、本人が止めた状態を解くことはしない -->
         <activity
             android:name="com.rabi.envoymcp.AssistActivity"
             android:excludeFromRecents="true"
@@ -187,7 +188,8 @@
                 android:resource="@xml/a11y_service" />
         </service>
 
-        <!-- 再生中の曲名 (YouTube Music など) を読むためだけの受け口 (本人が「通知へのアクセス」を許可したときだけ。通知の中身は読まない) -->
+        <!-- 再生中の曲名 (YouTube Music など) と、電話のアプリ・LINE の着信の通知を読む受け口 (本人が「通知へのアクセス」を許可したときだけ。
+             ほかのアプリの通知の中身は読まない) -->
         <service
             android:name="com.rabi.envoymcp.RigelNotificationListener"
             android:exported="true"

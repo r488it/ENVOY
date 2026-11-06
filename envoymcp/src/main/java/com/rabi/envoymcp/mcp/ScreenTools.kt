@@ -95,6 +95,11 @@ internal class ScreenTools(st: ToolState) : ToolGroup(st) {
         return ToolResult("画面の画像です。\n$s", s.put("result", "ok"), images = listOf(ToolResult.Image(Base64.encodeToString(img, Base64.NO_WRAP), o.screenshotMime)))
     }
 
+    /** 利用者が設定で画面の画像を切っているときの断り (share_screenshot が撮る前に確かめる。切っていなければ null) */
+    fun screenshotsOff(): ToolResult? =
+        if (g.settings.allowScreenshots) null
+        else failed("利用者が設定で、画面の画像を使わないようにしています。画面の画像は撮らず、共有もしません。")
+
     suspend fun lookAtScreen(): ToolResult {
         if (!g.settings.allowScreenshots) return failed("利用者が設定で、画面の画像を使わないようにしています。read_screen を使ってください。")
         if (g.settings.visionProvider == VisionProvider.CLAUDE) {

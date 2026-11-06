@@ -96,13 +96,13 @@ class PartRunner(
                     if (!obs.ok) return disconnectedOrEscalate(i, obs)
                     when (val f = Matcher.find(obs, step.selector ?: Selector(), vars)) {
                         is Matcher.Found.One -> {
-                            // 部品に確定と書かれていなくても、確定らしい要素は承認なしに押さない
-                            if (step.commit || CommitDetector.looksLikeCommit(f.node) || CommitDetector.togglesSetting(obs, f.node)) {
-                                return commit(part, step, i, f.node, vars, obs, listener)
-                            }
+                            // 部品に確定と書かれていなくても、確定らしい要素は承認なしに押さない。
+                            // 見るのは見つけた要素と、そこを押すと実際に押される部品 (押せる親) とその中身 (名前の無い枠の中の「送信」など)
+                            val hit = CommitDetector.commitIn(obs, f.node)
+                            if (step.commit || hit != null) return commit(part, step, i, hit ?: f.node, vars, obs, listener)
                             action(device.tap(f.node.bounds.cx, f.node.bounds.cy))
                         }
-                        is Matcher.Found.Many -> if (step.commit || f.nodes.any { CommitDetector.looksLikeCommit(it) }) return RunOutcome.Escalate(i, "押す場所が一つに決まりません (${f.nodes.size} 個)", obs)
+                        is Matcher.Found.Many -> if (step.commit || f.nodes.any { CommitDetector.commitIn(obs, it) != null }) return RunOutcome.Escalate(i, "押す場所が一つに決まりません (${f.nodes.size} 個)", obs)
                             else action(device.tap(f.nodes[0].bounds.cx, f.nodes[0].bounds.cy))
                         is Matcher.Found.None -> if (step.optional) StepResult.Skipped else return RunOutcome.Escalate(i,
                             if (step.selector?.isEmpty != false) "押す場所の手がかりが部品にありません" else "「${step.selector}」が画面に見つかりません", obs)
@@ -122,6 +122,8 @@ class PartRunner(
                             else -> return RunOutcome.Escalate(i, "入力欄が見つかりません", obs)
                         }
                         if (target.password) return RunOutcome.Failed("パスワード欄には入力しません")
+                        // 入れる前に押すので、入力欄でない確定らしい部品 (送信のボタンなど) は押さない (承認を通らずに押されないように)
+                        if (!target.editable && CommitDetector.commitIn(obs, target) != null) return RunOutcome.Escalate(i, "入力欄ではない確定らしい部品なので押しません", obs)
                         val tr = device.tap(target.bounds.cx, target.bounds.cy)
                         if (!tr.ok) return actionFailed(i, tr)
                         delay(250)

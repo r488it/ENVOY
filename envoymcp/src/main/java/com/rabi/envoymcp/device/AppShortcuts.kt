@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
+import com.rabi.envoymcp.call.NumberMask
 import com.rabi.envoymcp.core.RabiLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,11 +67,12 @@ class AppShortcuts(private val context: Context) {
         RabiLog.i("shortcuts", "scanned ${apps.size} apps: ${m.size} apps have ${m.values.sumOf { it.size }} shortcuts")
     }
 
-    /** そのアプリのショートカットを開く */
+    /** そのアプリのショートカットを開く。開くと電話がかかるかもしれないもの (mayCall) は開かない */
     fun open(pkg: String, id: String): ActionResult {
         if (!canRead) return ActionResult.fail("既定のホームアプリではないので、ショートカットを開けません")
-        val known = of(pkg).any { it.id == id } || query(pkg).any { it.id == id }
-        if (!known) return ActionResult.fail("そのショートカットはありません ($pkg / $id)")
+        val s = of(pkg).firstOrNull { it.id == id } ?: query(pkg).firstOrNull { it.id == id }
+            ?: return ActionResult.fail("そのショートカットはありません ($pkg / $id)")
+        if (mayCall(s)) return ActionResult.fail("電話がかかるかもしれないショートカットは開きません")
         return runCatching { la.startShortcut(pkg, id, null, null, user()); ActionResult.OK }
             .getOrElse { ActionResult.fail("開けませんでした (${it.javaClass.simpleName})") }
     }
@@ -121,5 +123,21 @@ class AppShortcuts(private val context: Context) {
         override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) { io.execute { packageNames.forEach { update(it) } } }
         override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) { if (!replacing) io.execute { packageNames.forEach { remove(it) } } }
         override fun onShortcutsChanged(packageName: String, shortcuts: MutableList<android.content.pm.ShortcutInfo>, user: UserHandle) { io.execute { update(packageName) } }
+    }
+
+    companion object {
+        /** 電話・連絡先のアプリ (ショートカットに、開くとすぐ発信するもの (「〇〇に発信」・連絡先の直接発信) がある) */
+        private val CALLING_APPS = NumberMask.DIALERS + listOf(
+            "com.samsung.android.dialer", "com.samsung.android.incallui", "com.android.phone",
+            "com.google.android.contacts", "com.android.contacts", "com.samsung.android.app.contacts",
+        )
+        /** ショートカットの名前で発信と分かる語 (ほかのアプリの「〇〇に発信」「ビデオ通話」など) */
+        private val CALL_WORDS = listOf("発信", "通話", "電話をかけ", "に電話")
+        private val CALL_EN = Regex("(?<![a-z])(call|dial)(?![a-z])")
+
+        /** 開くと電話がかかるかもしれないショートカットか (電話は、承認と緊急の番号の確かめがある call_phone でかける) */
+        fun mayCall(s: AppShortcut): Boolean = s.pkg in CALLING_APPS || listOf(s.label, s.longLabel).any { l ->
+            CALL_WORDS.any { l.contains(it) } || CALL_EN.containsMatchIn(l.lowercase())
+        }
     }
 }

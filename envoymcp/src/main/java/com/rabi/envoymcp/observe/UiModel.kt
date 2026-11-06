@@ -95,7 +95,51 @@ data class Observation(
     /** 座標にある、いちばん小さい要素。 */
     fun nodeAt(x: Int, y: Int): UiNode? = nodes.filter { it.bounds.contains(x, y) && it.bounds.area > 0 }
         .minByOrNull { it.bounds.area }
+
+    /**
+     * (x, y) を押したときに押される部品 (targets) と、その中身 (inner)。確定かどうかを、選んだ部品ではなく実際に押される部品で見るのに使う。
+     * - 押される部品: その場所にある押せる部品のうち、いちばん内側のもの (重なっていれば、それぞれ)
+     * - 中身: 押される部品の子孫。中の別の押せる部品 (その場所に無いので押されない) とその子孫・入力欄・画面に出ていないものは除く。
+     *   押される部品が画面の半分より大きければ (画面全体の入れ物など)、その場所に重なる子孫だけ
+     * - 押せる部品が無ければ、その場所に重なる部品 (画面の半分より大きいものは除く) を targets にする
+     * 親子は、木を上から順にたどった並び (nodes) と深さ (depth) で見る
+     */
+    fun pressAt(x: Int, y: Int): Press {
+        val at = nodes.indices.filter { nodes[it].bounds.area > 0 && nodes[it].bounds.contains(x, y) }
+        val half = screenArea() / 2
+        val clickable = at.filter { nodes[it].clickable }
+        val receivers = clickable.filter { p -> val end = subtreeEnd(p); clickable.none { q -> q in (p + 1) until end } }
+        if (receivers.isEmpty()) return Press(at.map { nodes[it] }.filter { it.bounds.area <= half }, emptyList())
+        val inner = ArrayList<UiNode>()
+        for (p in receivers) {
+            val end = subtreeEnd(p)
+            val big = nodes[p].bounds.area > half
+            var q = p + 1
+            while (q < end) {
+                val n = nodes[q]
+                if (n.clickable) { q = subtreeEnd(q); continue }
+                if (n.bounds.area > 0 && !n.editable && (!big || n.bounds.contains(x, y))) inner += n
+                q++
+            }
+        }
+        return Press(receivers.map { nodes[it] }, inner)
+    }
+
+    /** nodes の p 番目の部品の子孫が並ぶ範囲の終わり (含まない) */
+    private fun subtreeEnd(p: Int): Int {
+        val d = nodes[p].depth
+        var q = p + 1
+        while (q < nodes.size && nodes[q].depth > d) q++
+        return q
+    }
+
+    /** 画面の面積 (大きさが分からなければ、いちばん大きい部品の面積) */
+    private fun screenArea(): Long =
+        if (screenW > 0 && screenH > 0) screenW.toLong() * screenH else nodes.maxOfOrNull { it.bounds.area.toLong() } ?: 0L
 }
+
+/** ある位置を押したときに押される部品 (targets) と、その中にある部品 (inner。名前の手がかり) */
+class Press(val targets: List<UiNode>, val inner: List<UiNode>)
 
 /** uiautomator dump の XML を読む (属性はエスケープ済みの 1 行 XML)。 */
 object UiDumpParser {

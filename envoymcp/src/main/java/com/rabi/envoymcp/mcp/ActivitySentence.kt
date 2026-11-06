@@ -103,6 +103,7 @@ internal object ActivitySentence {
             "arm_stop" -> s("腕を", STOP)
             "rigel_expression" -> s("リゲルが表情を", V("見せた", "見せようとした"))
             "rigel_notify" -> s("お知らせを", V("預かった", "預かろうとした"))
+            "get_notices" -> s("お知らせを", READ)
             "run_part" -> s((quoted(first) ?: clean(args.optString("part_id")))?.let { "部品「$it」を" } ?: "部品を", V("動かした", "動かそうとした"))
             "save_part" -> s(clean(args.optString("name"))?.let { "部品「$it」を" } ?: "部品を", V("登録した", "登録しようとした"))
             "delete_part" -> s((if (done) quoted(first) else null)?.let { "部品「$it」を" } ?: "部品を", V("消した", "消そうとした"))

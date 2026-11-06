@@ -24,6 +24,8 @@ import kotlinx.coroutines.withContext
  * - 送るのは、リゲルのタップで新しく始めた会話に 1 回だけ (ChatGPT のアプリから直接始めた会話・続きの会話には送らない)
  * - 送れなかったら、入れた文字を消す (残ると「終了」が消え、リゲルの × で会話を終えられない)
  * - 文の中身は記録に残さない
+ * - 送る文は本人の発言として ChatGPT に入るので、外から届いた文 (電話の相手の話・かけてきた人の名前・定期の依頼の結果) は、
+ *   送る文を作る側 (Notices・CallFrames) で〔〕で囲み、指示ではないという注意を囲みより前に置く
  */
 class VoicePrimer(private val g: McpGraph) {
     private val am = g.context.getSystemService(AudioManager::class.java)
@@ -41,7 +43,8 @@ class VoicePrimer(private val g: McpGraph) {
     }
 
     /**
-     * リゲルの電話のあと、開き直した音声モードに、電話の結果を最初の一言として送る (ChatGPT に本人へ報告してもらう)。
+     * 開いた音声モードに、決まった頼みの文 (report。お知らせの引き継ぎ・電話のあとの報告・着信の質問) を最初の一言として送る。
+     * report は ENVOY MCP が書いた文だけ (外から届いた文は入れない)。
      * いつもの最初の一言 (設定) があれば、その後ろに続ける。送れたら onSent を呼ぶ
      */
     fun expectReport(report: String, onSent: () -> Unit = {}) {

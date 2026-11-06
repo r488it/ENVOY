@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import com.rabi.envoymcp.McpGraph
+import com.rabi.envoymcp.Notices
 import com.rabi.envoymcp.RigelNotificationListener
 import com.rabi.envoymcp.a11y.A11yService
 import com.rabi.envoymcp.core.RabiLog
@@ -22,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * かかってきた電話に、リゲルが代わりに出る。
@@ -34,9 +36,11 @@ import kotlinx.coroutines.withContext
  *   (秒数は鳴り始めから数える)。オフなら、ASK_TIMEOUT_MS で選ばせるのをやめる (電話はそのまま鳴る)
  * - 代わりに出るなら、ChatGPT の音声モードを終えてから (声が通話に入らないように)、ボードに出てもらう (RigelCaller.answer)。
  *   終わったら ChatGPT の音声モードを開き、用件を整理して報告させる (RigelCaller の後片付け)
- * - どのアプリの着信か (電話・LINE) とかけてきた人は、着信の通知から読む (通知へのアクセスの許可が要る)。読めなければ、
- *   電話のアプリの着信の画面からユーザー補助で読む。番号しか出ていなければ「登録されていない番号（末尾 1234）」にする
- *   (電話番号の全体は ChatGPT にもボードにも渡さない)
+ * - どのアプリの着信か (電話・LINE) とかけてきた人は、着信の通知から読む (通知へのアクセスの許可が要る。電話のアプリと LINE の通知だけ)。
+ *   読めなければ、電話のアプリの着信の画面からユーザー補助で読む。番号しか出ていなければ「登録されていない番号（末尾 1234）」にする
+ *   (電話番号の全体は ChatGPT にもボードにも渡さない)。名前は外から届いた文なので、記号・改行を除いて 30 字までにする
+ * - 声で尋ねるときの最初の一言には、アプリ・番号の末尾 4 桁と、かけてきた人の名前を入れる。名前は本人の発言として入るので、
+ *   〔〕で囲み、指示ではないと添える (CallFrames.ask)。get_notices の ringing でも、外から届いた文の印を付けて読める
  * - 本人もリゲルも出ないまま鳴りやんだ着信は、お知らせ (Notices) に残す (次にリゲルをタップしたときに伝える)。
  *   代わりに出るかを選ばせない設定でも残す。かけてきた人を通知か画面から読めなかったものは、本物の着信か分からないので残さない
  * - 電話: ボードがハンズフリーでつないで ATA で出る。LINE: ボードがつないだら、通知の「応答」(無ければ画面の「応答」) を押し、
@@ -51,6 +55,8 @@ class IncomingCall(private val g: McpGraph) {
     @Volatile var asking = false; private set
     /** かけてきた人 (名前、または「登録されていない番号（末尾 1234）」) */
     @Volatile var from = ""; private set
+    /** かけてきた番号の末尾 4 桁 (番号しか分からなかったとき。無ければ空) */
+    @Volatile private var fromLast4 = ""
     @Volatile private var askedByVoice = false
     /** どのアプリの着信か (phone・line) と、着信の通知 (LINE の「応答」を押すのに使う) */
     @Volatile private var app = "phone"
@@ -135,7 +141,7 @@ class IncomingCall(private val g: McpGraph) {
             delay(MISSED_CHECK_MS)
             if (ringAt != at || !identified || answered(at)) return@launch
             RabiLog.i("incoming", "missed ($app)")
-            g.notices.add("missed-$at", at, missedNote())
+            g.notices.add(Notices.Note("missed-$at", at, missedNote(), Notices.MISSED, app = app, last4 = fromLast4))
         }
     }
 
@@ -190,7 +196,7 @@ class IncomingCall(private val g: McpGraph) {
                 val n = notice
                 g.rigelCaller.answer(from, g.settings.rigelCallerName, app = "line", place = { answerLine(n) },
                     end = { g.lineCaller.end() }, watch = { send -> g.lineCaller.watch(send) })
-            } else g.rigelCaller.answer(from, g.settings.rigelCallerName)
+            } else g.rigelCaller.answer(from, g.settings.rigelCallerName, last4 = fromLast4)
             if (err != null) {
                 RabiLog.w("incoming", "cannot answer: $err")
                 withContext(Dispatchers.Main) { Toast.makeText(g.context, "リゲルが出られませんでした: $err", Toast.LENGTH_LONG).show() }
@@ -201,12 +207,13 @@ class IncomingCall(private val g: McpGraph) {
 
     // ---------------------------------------------------------------- 尋ね方
 
-    /** ChatGPT の音声モードを開き、最初の一言で、代わりに出るかを本人に尋ねさせる。開けなければ false */
+    /**
+     * ChatGPT の音声モードを開き、最初の一言で、代わりに出るかを本人に尋ねさせる。開けなければ false。
+     * 最初の一言 (CallFrames.ask) の名前は〔〕で囲む
+     */
     private suspend fun askByVoice(): Boolean = withContext(Dispatchers.Main) {
         g.voiceStage.expectVoice()
-        g.voicePrimer.expectReport(
-            "（電話がかかってきました）${from}からです。リゲル（AI）が代わりに出るか、自分で出るかを、私に短く尋ねてください。" +
-                "答えを聞いたら、すぐに rigel_incoming の道具で知らせてください（choice は、リゲルが出るなら rigel、自分で出るなら self）。")
+        g.voicePrimer.expectReport(CallFrames.ask(app, fromLast4, from))
         if (g.openChatGptVoice()) { RabiLog.i("incoming", "asking by voice"); holdSpeaker(); true }
         else { g.voiceStage.cancelExpect(); g.scope.launch { g.voicePrimer.stop() }; false }
     }
@@ -312,6 +319,16 @@ class IncomingCall(private val g: McpGraph) {
         runCatching { (s.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v) }
     }
 
+    /**
+     * 今かかってきている電話 (本人に選ばせている間だけ。無ければ null)。get_notices で返す。
+     * 名前 (caller) は外から届いた文なので untrusted の印を付ける
+     */
+    fun ringingJson(): JSONObject? {
+        if (!asking) return null
+        return JSONObject().put("app", app).put("untrusted", true).put("caller", from)
+            .apply { if (fromLast4.isNotEmpty()) put("number_last4", fromLast4) }
+    }
+
     // ---------------------------------------------------------------- かけてきた人
 
     /**
@@ -319,7 +336,7 @@ class IncomingCall(private val g: McpGraph) {
      * 番号だけなら末尾 4 桁にする
      */
     private suspend fun identify() {
-        notice = null; app = "phone"; from = ""; identified = false
+        notice = null; app = "phone"; from = ""; fromLast4 = ""; identified = false
         repeat(READ_TRIES) {
             val n = runCatching { RigelNotificationListener.instance?.incomingCall() }.getOrNull()
             if (n != null) {
@@ -348,10 +365,11 @@ class IncomingCall(private val g: McpGraph) {
         return null
     }
 
+    /** 名前は記号・改行を除いて 30 字まで。番号だけなら「登録されていない番号（末尾 1234）」にし、末尾 4 桁を fromLast4 に残す */
     private fun label(text: String): String {
-        if (!NumberMask.looksLikeNumber(text)) return text
-        val digits = text.filter { it.isDigit() }
-        return "登録されていない番号（末尾${digits.takeLast(4)}）"
+        if (!NumberMask.looksLikeNumber(text)) return Notices.clean(text, Notices.NAME_MAX_CHARS)
+        fromLast4 = Notices.last4(text)
+        return "登録されていない番号（末尾${fromLast4}）"
     }
 
     private companion object {
