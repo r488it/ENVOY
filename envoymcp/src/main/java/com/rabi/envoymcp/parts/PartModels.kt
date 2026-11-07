@@ -234,12 +234,14 @@ data class Step(
     val note: String = "",
     /** shortcut: アプリのショートカットの ID */
     val shortcut: String? = null,
+    /** 確定を押したあとに進める手順 (同じ確定を仕上げる確かめの画面の「停止」など。最初から入っている部品だけ。PartRunner.afterCommit) */
+    val afterCommit: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("op", op).put("selector", selector?.toJson() ?: JSONObject.NULL)
         .put("text", text ?: JSONObject.NULL).put("package", pkg ?: JSONObject.NULL).put("intent", intent?.toJson() ?: JSONObject.NULL)
         .put("direction", direction ?: JSONObject.NULL).put("ms", ms).put("expect", expect?.toJson() ?: JSONObject.NULL)
         .put("commit", commit).put("optional", optional).put("goto", goto ?: JSONObject.NULL).put("into", into ?: JSONObject.NULL)
-        .put("note", note).apply { if (shortcut != null) put("shortcut", shortcut) }
+        .put("note", note).apply { if (shortcut != null) put("shortcut", shortcut); if (afterCommit) put("after_commit", true) }
 
     companion object {
         fun from(j: JSONObject) = Step(
@@ -247,7 +249,7 @@ data class Step(
             j.optString("text").nn(), j.optString("package").nn(), IntentSpec.from(j.optJSONObject("intent")),
             j.optString("direction").nn(), j.optLong("ms", 0), j.optJSONObject("expect")?.let { Expect.from(it) },
             j.optBoolean("commit", false), j.optBoolean("optional", false), j.optString("goto").nn(), j.optString("into").nn(),
-            j.optString("note"), j.optString("shortcut").nn(),
+            j.optString("note"), j.optString("shortcut").nn(), j.optBoolean("after_commit", false),
         )
     }
 }

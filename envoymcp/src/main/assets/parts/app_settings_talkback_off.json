@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "id": "app.settings.talkback_off",
+  "name": "読み上げ (TalkBack) を止める",
+  "kind": "app",
+  "version": 1,
+  "source": "builtin",
+  "description": "目の不自由な人のための読み上げ (TalkBack) が入ってしまい、タップやスクロールのしかたが変わったときに、設定の「ユーザー補助」から TalkBack を止める。止める前に、スマホで本人の承認が出る。止めるかを聞く画面が出たら「停止」を押す (Pixel の日本語の画面)。TalkBack の間も、電源ボタンの長押しでリゲルを呼べる",
+  "examples": [
+    "読み上げを止めて",
+    "画面がしゃべる",
+    "スマホが勝手にしゃべる",
+    "TalkBack を止めて",
+    "トークバックを切って",
+    "タップしても押せない",
+    "2 回タップしないと押せない"
+  ],
+  "args": [],
+  "app": {
+    "package": "com.android.settings",
+    "label": "設定",
+    "alternatives": []
+  },
+  "conditions": {
+    "requires_unlock": true,
+    "requires_adb": true
+  },
+  "preconditions": [
+    {
+      "type": "app_installed",
+      "value": "com.android.settings"
+    }
+  ],
+  "steps": [
+    {
+      "id": "open",
+      "op": "intent",
+      "intent": {
+        "action": "android.settings.ACCESSIBILITY_SETTINGS"
+      },
+      "expect": {
+        "package": "{app.package}",
+        "any_text": ["TalkBack"],
+        "timeout_ms": 6000
+      }
+    },
+    {
+      "id": "talkback",
+      "op": "tap",
+      "selector": { "text": ["TalkBack"], "exact": true },
+      "expect": {
+        "any_text": ["TalkBack を使用", "Use TalkBack"],
+        "timeout_ms": 4000
+      }
+    },
+    {
+      "id": "switch",
+      "op": "tap",
+      "selector": { "text": ["TalkBack を使用", "Use TalkBack"], "exact": true },
+      "commit": true,
+      "note": "設定の切り替えなので、押す前に本人の承認が出る。TalkBack の間も、ENVOY は部品をクリックして押すので、押し方が変わっても押せる"
+    },
+    {
+      "id": "stop",
+      "op": "tap",
+      "selector": { "text": ["停止", "オフにする", "Stop", "Turn off"], "exact": true },
+      "after_commit": true,
+      "optional": true,
+      "note": "止めるかを聞く画面が出たら「停止」を押す (出ない機種では飛ばす)"
+    }
+  ],
+  "success": null,
+  "commit": {
+    "kind": "other",
+    "approval": "biometric",
+    "summary": "読み上げ (TalkBack) を止めます。止めると、ふだんのタップで操作できるようになります",
+    "fields": {
+      "止めるもの": "TalkBack (画面の読み上げ)"
+    },
+    "field_order": ["止めるもの"],
+    "screen_checks": ["TalkBack を使用"]
+  },
+  "verification": {
+    "status": "provisional"
+  },
+  "say_start": "読み上げを止めますね",
+  "say_done": "読み上げを止めました。ふだんのタップで操作できます"
+}

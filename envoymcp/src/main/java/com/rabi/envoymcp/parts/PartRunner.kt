@@ -65,6 +65,8 @@ class PartRunner(
             currentCoroutineContext().ensureActive()
             if (++guard > 200) return RunOutcome.Escalate(i, "手順が繰り返しになっています", lastObs)
             val step = steps[i]
+            // 確定のあとの手順は、確定を押したときだけ (afterCommit) 進める。ここまで確定が無ければ飛ばす
+            if (step.afterCommit) { i++; continue }
             listener.onStep(i, step)
             if (!acted && step.op in ACTION_OPS) { acted = true; listener.onFirstAction() }
             val r: StepResult = when (step.op) {
@@ -100,6 +102,7 @@ class PartRunner(
                             // 見るのは見つけた要素と、そこを押すと実際に押される部品 (押せる親) とその中身 (名前の無い枠の中の「送信」など)
                             val hit = CommitDetector.commitIn(obs, f.node)
                             if (step.commit || hit != null) return commit(part, step, i, hit ?: f.node, vars, obs, listener)
+                                .let { if (it is RunOutcome.Success) afterCommit(part, i, it) else it }
                             action(device.tap(f.node.bounds.cx, f.node.bounds.cy))
                         }
                         is Matcher.Found.Many -> if (step.commit || f.nodes.any { CommitDetector.commitIn(obs, it) != null }) return RunOutcome.Escalate(i, "押す場所が一つに決まりません (${f.nodes.size} 個)", obs)
@@ -219,6 +222,42 @@ class PartRunner(
         }
     }
 
+    /**
+     * 確定 (本人が承認して押した) のあとの手順。最初から入っている部品 (builtin) の、after_commit の手順だけを進める
+     * (同じ確定を仕上げる、確かめの画面の「停止」など)。そこでも確定らしい部品は押さない。
+     * それ以外の部品は、いつもどおり確定で終える
+     */
+    private suspend fun afterCommit(part: Part, i: Int, done: RunOutcome.Success): RunOutcome {
+        if (part.source != "builtin") return done
+        for (s in part.steps.drop(i + 1)) {
+            if (!s.afterCommit) break
+            when (s.op) {
+                "wait" -> delay(s.ms)
+                "tap" -> {
+                    val until = System.currentTimeMillis() + (s.expect?.timeoutMs ?: AFTER_COMMIT_WAIT_MS)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val obs = device.observe()
+                        val f = if (obs.ok) Matcher.find(obs, s.selector ?: Selector(), done.vars) else null
+                        if (f is Matcher.Found.One) {
+                            if (CommitDetector.commitIn(obs, f.node) != null) return RunOutcome.Unknown("確定のあとの「${f.node.label}」は確定らしいので、押していません")
+                            val r = device.tap(f.node.bounds.cx, f.node.bounds.cy)
+                            if (!r.ok) return RunOutcome.Unknown("確定のあとの手順を押せませんでした (${r.detail})")
+                            break
+                        }
+                        if (System.currentTimeMillis() > until) {
+                            if (s.optional) break
+                            return RunOutcome.Unknown("確定のあとの「${s.selector}」が画面に出ませんでした")
+                        }
+                        delay(pollMs)
+                    }
+                }
+                else -> return RunOutcome.Unknown("確定のあとには、押す・待つの手順だけを進めます")
+            }
+        }
+        return done
+    }
+
     private sealed class StepResult {
         data object Done : StepResult()
         data object Skipped : StepResult()
@@ -272,5 +311,7 @@ class PartRunner(
 
     companion object {
         val ACTION_OPS = setOf("launch", "shortcut", "panel", "intent", "tap", "type", "swipe", "scroll_to", "back", "home")
+        /** 確定のあとの手順で、押すものが出るまで待つ長さ (expect が無いとき) */
+        const val AFTER_COMMIT_WAIT_MS = 3_000L
     }
 }

@@ -6,7 +6,7 @@
 
 画面が暗い・広告が消えないといった困りごとは、Claude などの AI エージェントが画面を見て代わりに直します。<br/>知らない番号からの電話には代わりに出て、詐欺の疑いを家族に知らせます。<br/>取り消せない操作は本人が指紋で確かめ、したことはすべて記録に残ります。
 
-[![Android 12+](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)](#-必要なもの) [![MCP 52 tools](https://img.shields.io/badge/MCP-52%20tools-3987E5?logo=modelcontextprotocol&logoColor=white)](#-道具の一覧) [![unit tests 287](https://img.shields.io/badge/unit%20tests-287-2EA44F)](#-ビルド) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](#-claude-の活用) [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-6E7781)](#-ライセンス)
+[![Android 12+](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)](#-必要なもの) [![MCP 52 tools](https://img.shields.io/badge/MCP-52%20tools-3987E5?logo=modelcontextprotocol&logoColor=white)](#-道具の一覧) [![unit tests 292](https://img.shields.io/badge/unit%20tests-292-2EA44F)](#-ビルド) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](#-claude-の活用) [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-6E7781)](#-ライセンス)
 
 [![AgentPhone のデモ動画（2 分 56 秒・YouTube）](https://img.youtube.com/vi/mbPeMaOihG0/hqdefault.jpg)](https://www.youtube.com/watch?v=mbPeMaOihG0)
 
@@ -49,6 +49,8 @@ ENVOY MCP は、スマホを操作する道具を **MCP（Model Context Protocol
 | 電話で直せないもの | 年に 1 回の帰省のときに、まとめて直す（毎年、いくつもある） |
 
 明るさを自分で戻せず、私が帰省するまで、暗いままのスマホを使っていたこともありました。
+
+いちばん大変だったのは、目の不自由な人のための読み上げ（TalkBack）が入ってしまったときです。解除するまでは、タップやスクロールのしかたがふだんとまったく違い、画面の見えない電話では直し方を伝えられません。インターネットで調べて、電源ボタンとほかのボタンを長押しする方法でなんとか解除できましたが、やり方は機種によって違い、たまたま運がよかっただけでした。
 
 | 両親の声 | 背景 |
 | --- | --- |
@@ -123,7 +125,7 @@ AgentPhone の「知らない電話に代わりに出て、詐欺の疑いを見
 
 - **どのアプリでも**: アプリやショートカットを開く・画面を読む・押す・文字を入れる・動かす・戻る。通知やクイック設定も開ける
 - **画面を見て分かる**: 名前のないアイコン、Web やゲームの画面も、画面の画像を AI に読ませて、押せるものを見つける（設定でオンにしたときだけ。読む AI は、Sign in with ChatGPT か Claude の API キーかを選べる）
-- **手順を覚える**: うまくいった操作の手順を「部品」として覚え、次からは一瞬で動かす。最初から入っている手順もある（画面を明るくする・アラームを見る・写真を撮る・Web で調べる など）
+- **手順を覚える**: うまくいった操作の手順を「部品」として覚え、次からは一瞬で動かす。最初から入っている手順もある（画面を明るくする・読み上げ（TalkBack）を止める・アラームを見る・写真を撮る・Web で調べる など）
 - **一緒にやる**: 代わりに押さずに、押す場所を光る枠で指す。本人が押すと、すぐ次の場所を指す。最後まで、黙って押していくだけでできる
 - **画面を共有する**: 今の画面の画像を、アプリの共有に添えて開く（投稿は本人の承認のあと）
 
@@ -685,9 +687,9 @@ flowchart LR
 | --- | --- |
 | 人が書いたコード | なし（すべて Claude Code） |
 | Android のアプリ | Kotlin 約 3 万行（150 ファイル）・Jetpack Compose |
-| 単体の試験 | 287 件 |
+| 単体の試験 | 292 件 |
 | MCP の道具 | 52 個 |
-| 最初から入っている手順（部品） | 11 |
+| 最初から入っている手順（部品） | 12 |
 | 見本のアプリ | 3 つ |
 | デモ動画 | 2 分 56 秒（台本・合成音声・画面・実写の編集まで） |
 
@@ -714,7 +716,7 @@ flowchart LR
 | 段階 | Claude Code がしたこと |
 | --- | --- |
 | **開発** | Android のアプリ（Kotlin・Jetpack Compose）、MCP サーバーと 52 個の道具、承認・エージェントごとの権限・したことの記録、詐欺の見分け、設定の画面。腕の設計（CAD を動かすプログラム）とシミュレーション、ボードの上の電話の代役のプログラムも |
-| **試験** | 単体の試験 287 件。実機（Pixel）に入れて、ADB で画面・部品の木・記録を読み、動きを確かめる。見本のアプリ（広告・通販・音楽）も作って、実在のアプリを使わずに試せるようにした |
+| **試験** | 単体の試験 292 件。実機（Pixel）に入れて、ADB で画面・部品の木・記録を読み、動きを確かめる。見本のアプリ（広告・通販・音楽）も作って、実在のアプリを使わずに試せるようにした |
 | **記録の解析** | 実機の記録から原因を探して直す。たとえば、通話の音が届かない原因を Android のソースコードと音の記録から突き止めた（通話中のマイクは 1 つのアプリにしか渡らず、エコー消しがほかのアプリの声を消す）。雑音は、同じ Bluetooth の部品を別の PC につないで切り分けた。音の途切れは、送り待ちの数を記録から数えて直した（30 秒で約 7 秒遅れていた返事が 0.1〜0.9 秒で届くようになり、途切れは 0 に） |
 | **デモ動画** | 台本、合成音声、画面を 1 コマずつ描く仕組み、腕のシミュレーションの動き。実写は、撮影の音を文字起こしして使う所を選び、画面の明るさや赤さを 1 コマずつ測って「明るくなった瞬間」「詐欺の帯が出た瞬間」を見つけ、曲の拍に合わせて踊りの映像を切った |
 
