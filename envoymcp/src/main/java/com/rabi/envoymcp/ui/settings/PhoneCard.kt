@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.RingVolume
 import androidx.compose.material.icons.rounded.SupportAgent
@@ -25,16 +26,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import com.rabi.envoymcp.McpGraph
 import com.rabi.envoymcp.ui.calllog.CallLogActivity
+import com.rabi.envoymcp.ui.scamtrial.ScamTrialActivity
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-/** 電話の区分: 許可・リゲルが代わりに電話する・かかってきた電話に出る・通話の記録 */
+/** 電話の区分: 詐欺の電話の試し・許可・リゲルが代わりに電話する・かかってきた電話に出る・通話の記録 */
 @Composable
 internal fun PhoneCards(g: McpGraph, a: SettingsActivity, tick: Int) {
+    ScamTrialCard(a)
     PhonePermCard(a, tick)
     CallerCard(g, tick)
     IncomingCard(g)
     CallRecordCard(g, a)
+}
+
+/** 詐欺の電話の試し (腕のボードも API キーも要らない) */
+@Composable
+private fun ScamTrialCard(a: SettingsActivity) {
+    Card("詐欺の電話を試す", "腕・キーなし", icon = Icons.Rounded.GppMaybe) {
+        Btn("詐欺の電話を試す", true) { a.startActivity(Intent(a, ScamTrialActivity::class.java)) }
+        Note("あなたが電話の相手の役になって、詐欺の電話の台本を声に出して読むと、リゲルが聞き取って、本物の電話と同じしくみで詐欺の疑いを見分けます。本物の電話はかけません。腕のボードも API キーも要りません。試しの言葉は、どこにも残しません。")
+    }
 }
 
 /** 電話の道具の許可 (連絡先を読む・電話をかける) */

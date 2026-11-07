@@ -111,6 +111,14 @@
             android:taskAffinity="com.rabi.envoymcp.settings"
             android:theme="@style/Theme.Rabi" />
 
+        <!-- 詐欺の電話の試し (台本を声に出して読むと、リゲルが聞き取って詐欺の疑いを見分ける。本物の電話ではない。設定の「電話」から開く) -->
+        <activity
+            android:name="com.rabi.envoymcp.ui.scamtrial.ScamTrialActivity"
+            android:exported="false"
+            android:label="詐欺の電話の試し"
+            android:taskAffinity="com.rabi.envoymcp.settings"
+            android:theme="@style/Theme.Rabi" />
+
         <!-- したこと (AI エージェントとリゲルが、このスマホでしたことを短い文で。ホームの左下と、設定の「安心 (承認)」から開く) -->
         <activity
             android:name="com.rabi.envoymcp.ui.activity.ActivityActivity"
