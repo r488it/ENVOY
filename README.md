@@ -6,11 +6,13 @@
 
 画面が暗い・広告が消えないといった困りごとは、Claude などの AI エージェントが画面を見て代わりに直します。<br/>知らない番号からの電話には代わりに出て、詐欺の疑いを家族に知らせます。<br/>取り消せない操作は本人が指紋で確かめ、したことはすべて記録に残ります。
 
-[![Android 12+](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)](#-必要なもの) [![MCP 52 tools](https://img.shields.io/badge/MCP-52%20tools-3987E5?logo=modelcontextprotocol&logoColor=white)](#-道具の一覧) [![unit tests 286](https://img.shields.io/badge/unit%20tests-286-2EA44F)](#-ビルド) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](#-claude-の活用) [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-6E7781)](#-ライセンス)
+[![Android 12+](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)](#-必要なもの) [![MCP 52 tools](https://img.shields.io/badge/MCP-52%20tools-3987E5?logo=modelcontextprotocol&logoColor=white)](#-道具の一覧) [![unit tests 287](https://img.shields.io/badge/unit%20tests-287-2EA44F)](#-ビルド) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](#-claude-の活用) [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-6E7781)](#-ライセンス)
 
 [![AgentPhone のデモ動画（2 分 56 秒・YouTube）](https://img.youtube.com/vi/mbPeMaOihG0/hqdefault.jpg)](https://www.youtube.com/watch?v=mbPeMaOihG0)
 
 ▶ **デモ動画（2 分 56 秒）**: https://www.youtube.com/watch?v=mbPeMaOihG0
+
+▶ **ブラウザで試す（詐欺の電話の見分け・キーも登録も不要）**: https://r488it.github.io/ENVOY/try/
 
 [腕もキーも無しで試す](#-腕もキーも無しで試す) · [できること](#-できること) · [子どものために](#-子どものためにまなび) · [安心のしくみ](#-安心のしくみ) · [評価](#-評価数字で確かめる) · [しくみ](#-しくみ) · [道具の一覧](#-道具の一覧) · [はじめの設定](#-はじめの設定) · [Claude の活用](#-claude-の活用)
 
@@ -91,7 +93,12 @@ pie showData
 
 ## 🧪 腕もキーも無しで試す
 
-AgentPhone の「知らない電話に代わりに出て、詐欺の疑いを見分ける」を、Android のスマホ 1 台で試せます。腕のボード・API キー・アカウントは要りません。本物の電話もかけません。
+AgentPhone の「知らない電話に代わりに出て、詐欺の疑いを見分ける」を、ブラウザか、Android のスマホ 1 台で試せます。腕のボード・API キー・アカウントは要りません。本物の電話もかけません。
+
+> [!TIP]
+> **スマホが無くても、ブラウザで試せます**: [詐欺の電話を試す（ブラウザ版）](https://r488it.github.io/ENVOY/try/)。台本を流す・声で読む・文を打つ、の 3 つの試し方があります。見分けはアプリと同じ決まりを JavaScript で動かし（台本 60 本で、アプリと同じ結果になることを確かめています）、ページの中だけで行います
+
+**Android のスマホで試す（アプリ）**
 
 1. [Releases](https://github.com/r488it/ENVOY/releases) から `AgentPhone-ENVOY-MCP-0.1.0.apk` を、Android（12 以降）に入れる
 2. ENVOY MCP を開き、設定 › 「電話」 › 「**詐欺の電話を試す**」 › 「始める」
@@ -678,7 +685,7 @@ flowchart LR
 | --- | --- |
 | 人が書いたコード | なし（すべて Claude Code） |
 | Android のアプリ | Kotlin 約 3 万行（150 ファイル）・Jetpack Compose |
-| 単体の試験 | 286 件 |
+| 単体の試験 | 287 件 |
 | MCP の道具 | 52 個 |
 | 最初から入っている手順（部品） | 11 |
 | 見本のアプリ | 3 つ |
@@ -707,7 +714,7 @@ flowchart LR
 | 段階 | Claude Code がしたこと |
 | --- | --- |
 | **開発** | Android のアプリ（Kotlin・Jetpack Compose）、MCP サーバーと 52 個の道具、承認・エージェントごとの権限・したことの記録、詐欺の見分け、設定の画面。腕の設計（CAD を動かすプログラム）とシミュレーション、ボードの上の電話の代役のプログラムも |
-| **試験** | 単体の試験 286 件。実機（Pixel）に入れて、ADB で画面・部品の木・記録を読み、動きを確かめる。見本のアプリ（広告・通販・音楽）も作って、実在のアプリを使わずに試せるようにした |
+| **試験** | 単体の試験 287 件。実機（Pixel）に入れて、ADB で画面・部品の木・記録を読み、動きを確かめる。見本のアプリ（広告・通販・音楽）も作って、実在のアプリを使わずに試せるようにした |
 | **記録の解析** | 実機の記録から原因を探して直す。たとえば、通話の音が届かない原因を Android のソースコードと音の記録から突き止めた（通話中のマイクは 1 つのアプリにしか渡らず、エコー消しがほかのアプリの声を消す）。雑音は、同じ Bluetooth の部品を別の PC につないで切り分けた。音の途切れは、送り待ちの数を記録から数えて直した（30 秒で約 7 秒遅れていた返事が 0.1〜0.9 秒で届くようになり、途切れは 0 に） |
 | **デモ動画** | 台本、合成音声、画面を 1 コマずつ描く仕組み、腕のシミュレーションの動き。実写は、撮影の音を文字起こしして使う所を選び、画面の明るさや赤さを 1 コマずつ測って「明るくなった瞬間」「詐欺の帯が出た瞬間」を見つけ、曲の拍に合わせて踊りの映像を切った |
 

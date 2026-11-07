@@ -36,9 +36,10 @@ object ScamCheck {
 
     /**
      * 種類ごとの言い回し (正規表現)。カタカナ・全角はそのまま書いてよい (fold でそろえる)。
-     * そろえると英字は小文字になるので、\D・\S などの大文字の記号は使わない
+     * そろえると英字は小文字になるので、\D・\S などの大文字の記号は使わない。
+     * ブラウザの試しのページ (docs/try) も、これを書き出して同じ決まりで見る (JavaScript の正規表現でも使える書き方にする)
      */
-    private val RULES: Map<Sign, List<String>> = mapOf(
+    internal val RULES: Map<Sign, List<String>> = mapOf(
         Sign.MONEY to listOf(
             "振り込", "振込", "ふりこ[みまむめん]", "送金", "そうきん", "口座", "現金", "げんきん", "支払", "しはらい", "払い込", "払込",
             "手数料", "てすうりょう", "電子マネー", "ギフトカード", "ギフト券", "ギフトコード", "プリペイド", "還付", "かんぷきん",
@@ -97,7 +98,7 @@ object ScamCheck {
     private val PATTERNS: Map<Sign, Regex> = RULES.mapValues { (_, l) -> Regex(l.joinToString("|") { "(?:${fold(it)})" }) }
 
     /** 「高い」になるのは、お金の話・大事な番号を聞く話が、これらのどれかと一緒に出たとき */
-    private val PRESSURE = setOf(Sign.URGENT, Sign.AUTHORITY, Sign.THREAT, Sign.SECRET, Sign.KIN, Sign.ROBOT)
+    internal val PRESSURE = setOf(Sign.URGENT, Sign.AUTHORITY, Sign.THREAT, Sign.SECRET, Sign.KIN, Sign.ROBOT)
 
     /** 相手の言葉から外すもの (空白・読点・中黒。言い回しの途中に入っても当たるように) */
     private val DROP = Regex("[\\s、,・]")

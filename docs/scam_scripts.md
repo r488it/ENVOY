@@ -7,6 +7,10 @@ AgentPhone（ENVOY MCP）の「詐欺の電話を試す」で、声に出して�
 
 ## 試し方
 
+**ブラウザで**: [詐欺の電話を試す（ブラウザ版）](https://r488it.github.io/ENVOY/try/) を開き、「台本を流す」か「声で読む」で台本を選ぶ（キーも登録も要りません）
+
+**Android のアプリで**:
+
 1. ENVOY MCP を Android（12 以降）に入れる（[Releases](https://github.com/r488it/ENVOY/releases)）
 2. ENVOY MCP を開き、設定 › 「電話」 › 「詐欺の電話を試す」 › 「始める」
 3. リゲルが名乗ったら、下の台本の言葉を、上から順に声に出して読む（1 行読んだら、少し間を空ける）

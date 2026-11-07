@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>詐欺の電話を試す ― AgentPhone</title>
+<meta name="description" content="AgentPhone（ENVOY MCP）の詐欺の見分けを、ブラウザで試すページ。キーも登録も要りません。">
+<style>
+  :root {
+    --bg1: #13202f; --bg2: #070b12; --panel: rgba(8, 13, 22, .85); --line: rgba(120, 180, 255, .16);
+    --text: #e8eef7; --sub: #b9cbe3; --dim: #7f90a8; --green: #7fe3b0; --rigel: #9fd8ff; --peer: #d7f5e6;
+    --high: #c62828; --high-line: #ff8a80; --caution: #ffb300; --caution-line: #ffe082; --caution-text: #231a00;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: linear-gradient(var(--bg1), var(--bg2)) fixed; color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height: 1.6; }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 26px; margin: 4px 0 2px; font-weight: 900; }
+  .lead { color: var(--sub); font-weight: 700; margin: 0 0 12px; }
+  .badge { display: inline-block; font-size: 13px; font-weight: 800; color: #0b2a1c; background: var(--green); border-radius: 999px; padding: 3px 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 17px; padding: 14px 16px; margin: 12px 0; }
+  .tabs { display: flex; gap: 8px; margin: 16px 0 8px; flex-wrap: wrap; }
+  .tab { flex: 1 1 0; min-width: 120px; min-height: 48px; border-radius: 14px; border: 1px solid rgba(159, 216, 255, .5); background: rgba(43, 134, 217, .14);
+    color: var(--text); font-size: 16px; font-weight: 800; cursor: pointer; }
+  .tab[aria-selected="true"] { background: #2b86d9; border-color: #9fd8ff; }
+  label.small, .note { color: var(--dim); font-size: 13px; font-weight: 700; }
+  select, textarea { width: 100%; font: inherit; font-size: 16px; color: var(--text); background: #0b1320; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  textarea { min-height: 120px; resize: vertical; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button.go { min-height: 52px; padding: 0 22px; border: 0; border-radius: 14px; background: #2e9e6a; color: #fff; font-size: 18px; font-weight: 900; cursor: pointer; }
+  button.end { min-height: 52px; padding: 0 22px; border: 0; border-radius: 14px; background: #d32f2f; color: #fff; font-size: 18px; font-weight: 900; cursor: pointer; }
+  button.plain { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .35); background: transparent; color: #fff; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  .read { color: var(--green); font-weight: 700; margin: 6px 0 0; padding-left: 1.4em; }
+  .banner { border-radius: 16px; padding: 12px 18px; margin: 12px 0; border: 2px solid; }
+  .banner .t { font-size: 24px; font-weight: 900; line-height: 1.3; }
+  .banner .r { font-size: 18px; font-weight: 800; }
+  .banner.high { background: var(--high); border-color: var(--high-line); color: #fff; }
+  .banner.caution { background: var(--caution); border-color: var(--caution-line); color: var(--caution-text); }
+  .status { display: flex; align-items: center; gap: 10px; margin: 8px auto; width: fit-content; max-width: 100%; height: 48px; padding: 0 16px 0 10px;
+    border-radius: 24px; background: rgba(43, 134, 217, .22); border: 1px solid rgba(159, 216, 255, .5); font-weight: 800; }
+  .orb { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(#1a2533, #080b10); border: 3px solid rgba(159, 216, 255, .75); position: relative; flex: none; }
+  .orb::before, .orb::after { content: ""; position: absolute; top: 7px; width: 3px; height: 8px; border-radius: 2px; background: #eaf6ff; }
+  .orb::before { left: 7px; } .orb::after { right: 7px; }
+  .orb.talk { animation: glow .42s ease-in-out infinite alternate; }
+  @keyframes glow { from { border-color: rgba(159, 216, 255, .5); } to { border-color: #9fd8ff; box-shadow: 0 0 10px #9fd8ff; } }
+  .lines { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
+  .line { display: flex; gap: 10px; }
+  .who { width: 46px; flex: none; font-size: 11px; font-weight: 900; padding-top: 4px; }
+  .who.rigel { color: var(--rigel); } .who.peer { color: var(--green); }
+  .say { font-size: 15px; font-weight: 700; }
+  .say.rigel { color: var(--text); } .say.peer { color: var(--peer); } .say.partial { color: var(--dim); }
+  .result { font-size: 18px; font-weight: 900; }
+  .app { color: var(--sub); font-size: 14px; font-weight: 700; margin-top: 4px; }
+  a { color: var(--rigel); font-weight: 800; }
+  footer { color: var(--dim); font-size: 13px; margin-top: 24px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <span class="badge" id="same">アプリと同じ見分け</span>
+  <h1>詐欺の電話を試す</h1>
+  <p class="lead">AgentPhone のリゲルは、知らない電話に代わりに出て、相手の言葉から詐欺の疑いを見分けます。その見分けを、このページで試せます。キーも登録も要りません。見分けは、このページの中だけで行います（どこにも送りません）。</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-mode="play">台本を流す</button>
+    <button class="tab" role="tab" aria-selected="false" data-mode="voice">声で読む</button>
+    <button class="tab" role="tab" aria-selected="false" data-mode="type">文を打つ</button>
+  </div>
+
+  <section class="panel" id="pick">
+    <label class="small" for="script">台本（すべて作り話。評価で使った 60 本）</label>
+    <select id="script"></select>
+    <ol class="read" id="readLines" hidden></ol>
+  </section>
+
+  <section class="panel" data-for="play">
+    <p class="note">選んだ台本を、相手の言葉として 1 行ずつ流します。</p>
+    <div class="row">
+      <button class="go" id="playBtn">流す</button>
+      <label class="small"><input type="checkbox" id="speak"> 声も出す（この端末の読み上げ）</label>
+    </div>
+  </section>
+
+  <section class="panel" data-for="voice" hidden>
+    <p class="note" id="voiceNote">「始める」を押し、リゲルが名乗ったら、上の台本を声に出して読んでください（あなたが電話の相手の役です）。声の聞き取りは、ブラウザの音声認識を使います（Chrome は Google、Safari は Apple に声が送られます）。見分けは、このページの中だけで行います。</p>
+    <div class="row">
+      <button class="go" id="micStart">始める</button>
+      <button class="end" id="micEnd" disabled>終える</button>
+    </div>
+  </section>
+
+  <section class="panel" data-for="type" hidden>
+    <label class="small" for="typed">相手の言葉（1 行が、相手の 1 回の言葉）</label>
+    <textarea id="typed" placeholder="例: 警視庁の者です。あなたの口座が犯罪に使われています。"></textarea>
+    <div class="row"><button class="plain" id="exampleBtn">例を入れる</button><button class="plain" id="clearBtn">消す</button></div>
+  </section>
+
+  <div id="banner" class="banner" hidden><div class="t" id="bannerTitle"></div><div class="r" id="bannerReasons"></div></div>
+  <div class="status"><div class="orb" id="orb"></div><span id="statusText">試しの電話（本物の電話ではありません）</span></div>
+  <section class="panel">
+    <div class="note">通話のやり取り（文字）</div>
+    <div class="lines" id="lines"></div>
+  </section>
+  <section class="panel" id="resultBox" hidden>
+    <div class="result" id="result"></div>
+    <div class="app" id="app"></div>
+  </section>
+
+  <footer>
+    <p>本物の電話では、リゲルが代わりに出て、AI だと名乗って用件を聞き、相手の言葉が届くたびに、このページと同じしくみで詐欺の疑いを見分けます。Android のスマホがあれば、アプリの 設定 › 電話 › 「詐欺の電話を試す」 で、同じことをスマホの中で試せます。</p>
+    <p><a href="https://github.com/r488it/ENVOY">AgentPhone（GitHub）</a> ・ <a href="https://github.com/r488it/ENVOY/blob/main/docs/scam_scripts.md">台本の一覧</a> ・ <a href="https://github.com/r488it/ENVOY/releases">アプリ（Releases）</a></p>
+    <p>見分けは、言い回しの決まり（お金の話・大事な番号を聞く・急がせる・警察などを名乗る・おどす・秘密にさせる・身内を名乗る・自動音声）に当たるかを見るだけなので、「詐欺です」とは言い切りません。台本と人の名前・会社・番号は、すべて作り話です。</p>
+  </footer>
+</main>
+
+<script src="scam_data.js"></script>
+<script src="scam_check.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const D = SCAM_DATA;
+  let mode = 'play', lines = [], partial = '', run = 0;
+
+  // アプリと同じ結果になるか (読み込んだときに、60 本で確かめる)
+  const [same, all] = ScamCheckJs.selfCheck();
+  $('same').textContent = `アプリと同じ見分け（台本 ${all} 本中 ${same} 本が同じ結果）`;
+
+  // 台本の一覧
+  const group = (label, title) => {
+    const g = document.createElement('optgroup');
+    g.label = title;
+    D.scripts.filter((s) => s.label === label).forEach((s) => {
+      const o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = `${s.id} ${s.kind}${s.tricky ? '（まぎらわしい本物）' : ''}`;
+      g.appendChild(o);
+    });
+    $('script').appendChild(g);
+  };
+  group('scam', '詐欺の台本（30 本）');
+  group('ordinary', 'ふつうの電話の台本（30 本）');
+  const current = () => D.scripts.find((s) => s.id === $('script').value);
+
+  const peerTexts = () => lines.filter((l) => l.who === 'peer').map((l) => l.text);
+  const levelLabel = (r) => (r.level === 'NONE' ? '詐欺の疑いなし' : ScamCheckJs.title(r.level) + (r.reasons.length ? `（${r.reasons.join('・')}）` : ''));
+
+  function render() {
+    const r = ScamCheckJs.check(peerTexts().concat(partial ? [partial] : []));
+    const b = $('banner');
+    b.hidden = r.level === 'NONE';
+    b.className = 'banner ' + (r.level === 'HIGH' ? 'high' : 'caution');
+    $('bannerTitle').textContent = ScamCheckJs.title(r.level);
+    $('bannerReasons').textContent = r.reasons.join('・');
+    const box = $('lines');
+    box.textContent = '';
+    const shown = partial ? lines.concat([{ who: 'peer', text: partial + '…', partial: true }]) : lines;
+    if (!shown.length) {
+      const p = document.createElement('div');
+      p.className = 'note';
+      p.textContent = 'まだ、やり取りはありません';
+      box.appendChild(p);
+    }
+    for (const l of shown) {
+      const row = document.createElement('div'); row.className = 'line';
+      const who = document.createElement('div'); who.className = 'who ' + l.who; who.textContent = l.who === 'rigel' ? 'リゲル' : '相手';
+      const say = document.createElement('div'); say.className = 'say ' + (l.partial ? 'partial' : l.who); say.textContent = l.text;
+      row.append(who, say); box.appendChild(row);
+    }
+    box.scrollTop = box.scrollHeight;
+    return r;
+  }
+
+  function status(text, talking) { $('statusText').textContent = text; $('orb').classList.toggle('talk', !!talking); }
+
+  function finish(script) {
+    const r = render();
+    const peer = peerTexts().length;
+    $('resultBox').hidden = false;
+    $('result').textContent = peer === 0 ? '相手の言葉がありませんでした' : (r.level === 'NONE' ? D.noRisk : levelLabel(r) + '。');
+    $('app').textContent = script ? `アプリで同じ台本を見分けた結果: ${levelLabel(script.expected)}` : '';
+    if (peer > 0) {
+      const closing = r.level === 'NONE' ? D.noRisk : D.advice;
+      lines.push({ who: 'rigel', text: closing });
+      render();
+      if (mode !== 'type') speak(closing);
+    }
+    status('試しを終えました', false);
+  }
+
+  function reset() {
+    run++; lines = []; partial = ''; $('resultBox').hidden = true; $('playBtn').disabled = false;
+    render(); status('試しの電話（本物の電話ではありません）', false); stopMic(); window.speechSynthesis?.cancel();
+  }
+
+  // この端末の読み上げ (どこにも送らない)。言い終えたら then
+  function speak(text, then) {
+    const ok = 'speechSynthesis' in window && (mode === 'voice' || $('speak').checked);
+    if (!ok) { if (then) setTimeout(then, 0); return; }
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP';
+    u.onend = u.onerror = () => then && then();
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  }
+  const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const say = (text) => new Promise((ok) => speak(text, ok));
+
+  // 台本を流す
+  async function play() {
+    reset();
+    const my = run, s = current();
+    $('playBtn').disabled = true;
+    lines.push({ who: 'rigel', text: D.greeting }); render(); status('リゲルが話しています', true);
+    $('speak').checked ? await say(D.greeting) : await wait(1200);
+    for (const t of s.lines) {
+      if (my !== run) return;
+      status('相手の声を聞いています', false);
+      lines.push({ who: 'peer', text: t }); render();
+      $('speak').checked ? await say(t) : await wait(700 + t.length * 45);
+    }
+    if (my !== run) return;
+    $('playBtn').disabled = false;
+    finish(s);
+  }
+
+  // 声で読む (ブラウザの音声認識)
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false;
+  if (!SR) {
+    $('voiceNote').textContent = 'このブラウザは、声の聞き取りに対応していません。Chrome か Safari で開くか、「文を打つ」で試してください。';
+    $('micStart').disabled = true;
+  }
+  function stopMic() { listening = false; try { rec && rec.stop(); } catch (e) {} $('micStart').disabled = !SR; $('micEnd').disabled = true; }
+  function startMic() {
+    reset();
+    $('micStart').disabled = true; $('micEnd').disabled = false;
+    lines.push({ who: 'rigel', text: D.greeting }); render(); status('リゲルが話しています', true);
+    speak(D.greeting, () => {
+      if ($('micEnd').disabled) return;
+      listening = true;
+      rec = new SR();
+      rec.lang = 'ja-JP'; rec.continuous = true; rec.interimResults = true;
+      rec.onresult = (e) => {
+        partial = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript.trim();
+          if (!t) continue;
+          if (e.results[i].isFinal) lines.push({ who: 'peer', text: t }); else partial += t;
+        }
+        status(partial ? '相手の声を聞いています' : '台本を読んでください', false);
+        render();
+      };
+      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { status('マイクの許可がありません', false); stopMic(); } };
+      rec.onend = () => { if (listening) { try { rec.start(); } catch (e) {} } };
+      rec.start();
+      status('台本を読んでください', false);
+    });
+  }
+  function endMic() {
+    if (partial) { lines.push({ who: 'peer', text: partial }); partial = ''; }
+    stopMic();
+    finish(null);
+  }
+
+  // 文を打つ (打つたびに見分ける)
+  function typed() {
+    run++;
+    lines = $('typed').value.split('\n').map((t) => t.trim()).filter(Boolean).map((t) => ({ who: 'peer', text: t }));
+    if (lines.length) lines.unshift({ who: 'rigel', text: D.greeting });
+    partial = '';
+    const r = render();
+    $('resultBox').hidden = !lines.length;
+    $('result').textContent = r.level === 'NONE' ? D.noRisk : levelLabel(r) + '。';
+    $('app').textContent = '';
+    status('打った言葉を、相手の言葉として見ています', false);
+  }
+
+  // 切り替え
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', t.dataset.mode === m));
+    document.querySelectorAll('[data-for]').forEach((p) => { p.hidden = p.dataset.for !== m; });
+    $('pick').hidden = m === 'type';
+    showRead();
+    reset();
+    if (m === 'type') typed();
+  }
+  function showRead() {
+    const ol = $('readLines');
+    ol.hidden = mode !== 'voice';
+    ol.textContent = '';
+    if (mode === 'voice') current().lines.forEach((t) => { const li = document.createElement('li'); li.textContent = t; ol.appendChild(li); });
+  }
+
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => setMode(t.dataset.mode)));
+  $('script').addEventListener('change', () => { showRead(); reset(); });
+  $('playBtn').addEventListener('click', play);
+  $('micStart').addEventListener('click', startMic);
+  $('micEnd').addEventListener('click', endMic);
+  $('typed').addEventListener('input', typed);
+  $('exampleBtn').addEventListener('click', () => { $('typed').value = D.example.replace(/。(?=.)/g, '。\n'); typed(); });
+  $('clearBtn').addEventListener('click', () => { $('typed').value = ''; typed(); });
+  render();
+})();
+</script>
+</body>
+</html>
