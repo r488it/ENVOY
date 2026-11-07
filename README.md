@@ -571,6 +571,9 @@ pie showData
 
 ## 🔨 ビルド
 
+> [!TIP]
+> ビルドしなくても、[Releases](https://github.com/r488it/ENVOY/releases) の APK（本体と見本のアプリ 3 つ）をそのまま入れて使えます。まず試すなら「[腕もキーも無しで試す](#-腕もキーも無しで試す)」へ
+
 ```sh
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :envoymcp:assembleDebug        # 作る
